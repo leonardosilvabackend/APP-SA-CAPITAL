@@ -19,6 +19,7 @@ import {
 import { useState, type ReactNode } from "react";
 import { Link, Route, Switch, useLocation } from "wouter";
 import type { AuthenticatedUser, HealthResponse } from "@shared/contracts";
+import UsersPage from "./pages/UsersPage";
 
 const navigation = [
   { href: "/", label: "Visão geral", icon: LayoutDashboard },
@@ -194,7 +195,7 @@ function App() {
   if (me.isLoading) return <div className="auth-loading">Validando sessão…</div>;
   if (!me.data) return <AuthPage onAuthenticated={user => queryClient.setQueryData(["current-user"], user)} />;
 
-  return <AppShell user={me.data} onLogout={logout}><Switch><Route path="/">{() => <Dashboard user={me.data!} />}</Route>{Object.keys(pageContent).map(path => <Route key={path} path={path}>{() => <ModulePage path={path} />}</Route>)}<Route><ModulePage path="/estoque" /></Route></Switch></AppShell>;
+  return <AppShell user={me.data} onLogout={logout}><Switch><Route path="/">{() => <Dashboard user={me.data!} />}</Route><Route path="/usuarios">{() => me.data!.role === "admin" ? <UsersPage currentUser={me.data!} /> : <ModulePage path="/estoque" />}</Route>{Object.keys(pageContent).filter(path => path !== "/usuarios").map(path => <Route key={path} path={path}>{() => <ModulePage path={path} />}</Route>)}<Route><ModulePage path="/estoque" /></Route></Switch></AppShell>;
 }
 
 export default App;

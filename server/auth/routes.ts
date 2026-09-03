@@ -4,7 +4,8 @@ import { loginInputSchema, setupAdminInputSchema, type AuthenticatedUser } from 
 import { getDatabase } from "../db/client";
 import { users } from "../db/schema";
 import { hashPassword, verifyPassword } from "./password";
-import { clearSessionCookie, createSessionToken, getSessionToken, readSessionToken, setSessionCookie } from "./session";
+import { getCurrentUser } from "./current-user";
+import { clearSessionCookie, createSessionToken, setSessionCookie } from "./session";
 
 export const authRouter = Router();
 const attempts = new Map<string, { count: number; resetAt: number }>();
@@ -92,17 +93,8 @@ authRouter.post("/login", asyncRoute(async (req, res) => {
 }));
 
 authRouter.get("/me", asyncRoute(async (req, res) => {
-  const token = getSessionToken(req);
-  if (!token) return res.status(401).json({ user: null });
-  const userId = await readSessionToken(token);
-  if (!userId) {
-    clearSessionCookie(res);
-    return res.status(401).json({ user: null });
-  }
-  const db = getDatabase();
-  if (!db) return res.status(503).json({ error: "Banco de dados não configurado" });
-  const [user] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
-  if (!user || user.status !== "active") {
+  const user = await getCurrentUser(req);
+  if (!user) {
     clearSessionCookie(res);
     return res.status(401).json({ user: null });
   }

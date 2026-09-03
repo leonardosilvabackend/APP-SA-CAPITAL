@@ -29,3 +29,15 @@ export const loginInputSchema = z.object({
 export const setupAdminInputSchema = loginInputSchema.extend({
   name: z.string().trim().min(3, "Informe seu nome").max(160),
 });
+
+export const createUserInputSchema = setupAdminInputSchema.extend({
+  phone: z.string().trim().max(32).optional(),
+  role: userRoleSchema.default("partner"),
+});
+
+export const updateUserInputSchema = z.object({
+  name: z.string().trim().min(3).max(160).optional(),
+  phone: z.string().trim().max(32).nullable().optional(),
+  role: userRoleSchema.optional(),
+  status: z.enum(["active", "inactive"]).optional(),
+}).refine(value => Object.keys(value).length > 0, "Informe ao menos uma alteração");
