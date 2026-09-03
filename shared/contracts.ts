@@ -9,6 +9,15 @@ export const healthResponseSchema = z.object({
 
 export type HealthResponse = z.infer<typeof healthResponseSchema>;
 
+export const dashboardMetricsSchema = z.object({
+  availableQuotas: z.number(),
+  availableCredit: z.number(),
+  savedQuotes: z.number(),
+  activePartners: z.number(),
+});
+
+export type DashboardMetrics = z.infer<typeof dashboardMetricsSchema>;
+
 export const userRoleSchema = z.enum(["admin", "partner"]);
 
 export const authenticatedUserSchema = z.object({

@@ -15,7 +15,7 @@ import {
 } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { Link, Route, Switch, useLocation } from "wouter";
-import type { AuthenticatedUser, HealthResponse } from "@shared/contracts";
+import type { AuthenticatedUser, DashboardMetrics, HealthResponse } from "@shared/contracts";
 import UsersPage from "./pages/UsersPage";
 import { ChangePasswordPage, ForgotPasswordForm, ResetPasswordPage } from "./pages/PasswordPages";
 import StockPage from "./pages/StockPage";
@@ -87,11 +87,23 @@ function Dashboard({ user }: { user: AuthenticatedUser }) {
     },
   });
 
+  const metrics = useQuery<DashboardMetrics>({
+    queryKey: ["dashboard-metrics", user.id],
+    queryFn: async () => {
+      const response = await fetch("/api/dashboard/metrics", { credentials: "same-origin" });
+      if (!response.ok) throw new Error("Não foi possível carregar os indicadores");
+      return response.json();
+    },
+  });
+
+  const integer = (value?: number) => metrics.isLoading ? "…" : new Intl.NumberFormat("pt-BR").format(value ?? 0);
+  const currency = (value?: number) => metrics.isLoading ? "…" : new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 }).format(value ?? 0);
+
   const cards = [
-    { label: "Cotas disponíveis", value: "—", icon: PackageSearch, tone: "blue" },
-    { label: "Cotações salvas", value: "—", icon: WalletCards, tone: "gold" },
-    { label: "Parceiros ativos", value: "—", icon: Users, tone: "green" },
-    { label: "Volume disponível", value: "—", icon: BarChart3, tone: "navy" },
+    { label: "Cotas disponíveis", value: integer(metrics.data?.availableQuotas), detail: "Condições prontas para cotação", icon: PackageSearch, tone: "blue" },
+    { label: "Cotações salvas", value: integer(metrics.data?.savedQuotes), detail: user.role === "admin" ? "Histórico de toda a equipe" : "Seu histórico de cotações", icon: WalletCards, tone: "gold" },
+    { label: "Parceiros ativos", value: integer(metrics.data?.activePartners), detail: "Acessos ativos na plataforma", icon: Users, tone: "green" },
+    { label: "Volume disponível", value: currency(metrics.data?.availableCredit), detail: "Crédito total em estoque", icon: BarChart3, tone: "navy" },
   ];
 
   return <>
@@ -100,7 +112,7 @@ function Dashboard({ user }: { user: AuthenticatedUser }) {
       <Link href="/estoque" className="primary-button">Consultar estoque <ChevronRight size={18} /></Link>
     </section>
     <section className="metrics-grid">
-      {cards.map(card => <article className="metric-card" key={card.label}><div className={`metric-icon ${card.tone}`}><card.icon size={21} /></div><span>{card.label}</span><strong>{card.value}</strong><small>Aguardando conexão com o banco</small></article>)}
+      {cards.map(card => <article className="metric-card" key={card.label}><div className={`metric-icon ${card.tone}`}><card.icon size={21} /></div><span>{card.label}</span><strong>{card.value}</strong><small>{metrics.isError ? "Indicador temporariamente indisponível" : card.detail}</small></article>)}
     </section>
     <section className="content-grid">
       <article className="panel">
