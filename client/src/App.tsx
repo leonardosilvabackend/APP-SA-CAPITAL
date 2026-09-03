@@ -51,8 +51,8 @@ function AppShell({ children, user, onLogout }: { children: ReactNode; user: Aut
       {open && <button className="sidebar-backdrop" aria-label="Fechar menu" onClick={() => setOpen(false)} />}
       <aside className={`sidebar ${open ? "sidebar-open" : ""}`}>
         <div className="brand-row">
-          <div className="brand-mark">SA</div>
-          <div><strong>SA CAPITAL</strong><span>Crédito inteligente</span></div>
+          <img className="sidebar-logo-mark" src="/brand/sa-capital-mark.jpeg" alt="SA Capital" />
+          <div><strong>SA CAPITAL</strong><span>Soluções em créditos</span></div>
           <button className="icon-button sidebar-close" onClick={() => setOpen(false)} aria-label="Fechar menu"><X size={20} /></button>
         </div>
         <nav>
@@ -71,7 +71,7 @@ function AppShell({ children, user, onLogout }: { children: ReactNode; user: Aut
       <div className="main-column">
         <header className="topbar">
           <button className="icon-button menu-button" onClick={() => setOpen(true)} aria-label="Abrir menu"><Menu size={21} /></button>
-          <div className="topbar-title"><span>SA Capital</span><small>Portal comercial</small></div>
+          <div className="topbar-title"><span>Portal SA Capital</span><small>Soluções em créditos</small></div>
           <button className="icon-button" aria-label="Notificações"><Bell size={20} /></button>
           <button className="icon-button" onClick={onLogout} aria-label="Sair"><LogOut size={20} /></button>
         </header>
@@ -174,7 +174,7 @@ function AuthPage({ onAuthenticated }: { onAuthenticated: (user: AuthenticatedUs
   if (setup.isLoading) return <div className="auth-loading">Preparando acesso seguro…</div>;
   return <div className="auth-page">
     <section className="auth-brand-panel">
-      <div className="auth-brand"><div className="brand-mark">SA</div><strong>SA CAPITAL</strong></div>
+      <div className="auth-brand"><img src="/brand/sa-capital-logo.jpeg" alt="SA Capital — Soluções em créditos" /></div>
       <div><span className="eyebrow">CRÉDITO INTELIGENTE</span><h1>Decisões comerciais com clareza e segurança.</h1><p>Gestão de cotas contempladas, cotações e análises em uma plataforma independente.</p></div>
       <small>Ambiente protegido • SA Capital</small>
     </section>
