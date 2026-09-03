@@ -18,6 +18,15 @@ export const dashboardMetricsSchema = z.object({
 
 export type DashboardMetrics = z.infer<typeof dashboardMetricsSchema>;
 
+export const preAnalysisStatusSchema = z.enum(["draft", "pending", "approved", "rejected"]);
+export const createPreAnalysisSchema = z.object({
+  customerType: z.enum(["PF", "PJ"]),
+  customerName: z.string().trim().min(3, "Informe o nome do cliente").max(160),
+  document: z.string().transform(value => value.replace(/\D/g, "")),
+  status: preAnalysisStatusSchema.default("draft"),
+}).refine(data => data.document.length === (data.customerType === "PF" ? 11 : 14), { message: "Informe um CPF ou CNPJ válido", path: ["document"] });
+export const updatePreAnalysisSchema = z.object({ status: preAnalysisStatusSchema });
+
 export const userRoleSchema = z.enum(["admin", "partner"]);
 
 export const authenticatedUserSchema = z.object({

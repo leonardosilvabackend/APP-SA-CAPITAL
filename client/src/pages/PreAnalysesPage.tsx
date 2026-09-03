@@ -1,0 +1,28 @@
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { FileCheck2, Plus, X } from "lucide-react";
+import { useState, type FormEvent } from "react";
+import { toast } from "sonner";
+import type { AuthenticatedUser } from "@shared/contracts";
+
+type Status = "draft" | "pending" | "approved" | "rejected";
+type Item = { id: string; partnerId: string; partnerName: string; customerType: "PF" | "PJ"; customerName: string; document: string; status: Status; createdAt: string; updatedAt: string };
+const statuses: { value: Status; label: string }[] = [{ value: "draft", label: "Rascunho" }, { value: "pending", label: "Em análise" }, { value: "approved", label: "Aprovada" }, { value: "rejected", label: "Recusada" }];
+async function api(path = "", options?: RequestInit) { const response = await fetch(`/api/pre-analyses${path}`, { credentials: "same-origin", ...options, headers: options?.body ? { "Content-Type": "application/json", ...options.headers } : options?.headers }); const data = await response.json().catch(() => ({})); if (!response.ok) throw new Error(data.error ?? "Não foi possível concluir a operação"); return data; }
+function formatDocument(value: string, type: "PF" | "PJ") { return type === "PF" ? value.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4") : value.replace(/(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/, "$1.$2.$3/$4-$5"); }
+
+function CreateModal({ onClose }: { onClose: () => void }) {
+  const queryClient = useQueryClient();
+  const [customerType, setCustomerType] = useState<"PF" | "PJ">("PF");
+  const [customerName, setCustomerName] = useState("");
+  const [document, setDocument] = useState("");
+  const create = useMutation({ mutationFn: () => api("", { method: "POST", body: JSON.stringify({ customerType, customerName, document, status: "draft" }) }), onSuccess: () => { void queryClient.invalidateQueries({ queryKey: ["pre-analyses"] }); toast.success("Pré-análise cadastrada"); onClose(); } });
+  return <div className="modal-backdrop"><form className="pre-analysis-modal" onSubmit={(event: FormEvent) => { event.preventDefault(); create.mutate(); }}><div className="modal-heading"><div><span className="eyebrow">NOVA PRÉ-ANÁLISE</span><h2>Dados do cliente</h2></div><button type="button" className="icon-button" onClick={onClose}><X size={19} /></button></div><div className="pre-analysis-form"><label>Tipo de cliente<select value={customerType} onChange={event => { setCustomerType(event.target.value as "PF" | "PJ"); setDocument(""); }}><option value="PF">Pessoa física</option><option value="PJ">Pessoa jurídica</option></select></label><label>Nome {customerType === "PF" ? "completo" : "ou razão social"}<input value={customerName} onChange={event => setCustomerName(event.target.value)} minLength={3} maxLength={160} required /></label><label>{customerType === "PF" ? "CPF" : "CNPJ"}<input inputMode="numeric" value={document} onChange={event => setDocument(event.target.value.replace(/\D/g, "").slice(0, customerType === "PF" ? 11 : 14))} placeholder={customerType === "PF" ? "Somente 11 números" : "Somente 14 números"} required /></label></div>{create.error && <div className="auth-error">{create.error.message}</div>}<div className="form-actions"><button type="button" className="secondary-button" onClick={onClose}>Cancelar</button><button className="primary-button button-reset" disabled={create.isPending}>{create.isPending ? "Salvando…" : "Cadastrar"}</button></div></form></div>;
+}
+
+export default function PreAnalysesPage({ user }: { user: AuthenticatedUser }) {
+  const queryClient = useQueryClient();
+  const [creating, setCreating] = useState(false);
+  const list = useQuery<{ items: Item[] }>({ queryKey: ["pre-analyses"], queryFn: () => api() });
+  const update = useMutation({ mutationFn: ({ id, status }: { id: string; status: Status }) => api(`/${id}`, { method: "PATCH", body: JSON.stringify({ status }) }), onSuccess: () => { void queryClient.invalidateQueries({ queryKey: ["pre-analyses"] }); toast.success("Status atualizado"); }, onError: error => toast.error(error.message) });
+  return <section className="pre-analyses-page"><div className="page-heading-row"><div><span className="eyebrow">ANÁLISE CADASTRAL</span><h1>Pré-análises</h1><p>{list.data?.items.length ?? 0} registro{list.data?.items.length === 1 ? "" : "s"} encontrado{list.data?.items.length === 1 ? "" : "s"}.</p></div><button className="primary-button button-reset" onClick={() => setCreating(true)}><Plus size={18} /> Nova pré-análise</button></div><div className="pre-analysis-list panel">{list.isLoading && <div className="table-message">Carregando pré-análises…</div>}{list.error && <div className="auth-error">{list.error.message}</div>}{list.data?.items.map(item => <article className="pre-analysis-row" key={item.id}><span className="pre-analysis-icon"><FileCheck2 size={20} /></span><div><strong>{item.customerName}</strong><small>{item.customerType} • {formatDocument(item.document, item.customerType)}</small></div>{user.role === "admin" && <div><small>Responsável</small><strong>{item.partnerName}</strong></div>}<div><small>Criada em</small><strong>{new Date(item.createdAt).toLocaleDateString("pt-BR")}</strong></div><select className={`analysis-status ${item.status}`} value={item.status} disabled={update.isPending} onChange={event => update.mutate({ id: item.id, status: event.target.value as Status })}>{statuses.map(status => <option key={status.value} value={status.value}>{status.label}</option>)}</select></article>)}{list.data?.items.length === 0 && <div className="table-message">Nenhuma pré-análise cadastrada.</div>}</div>{creating && <CreateModal onClose={() => setCreating(false)} />}</section>;
+}

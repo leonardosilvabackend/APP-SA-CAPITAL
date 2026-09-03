@@ -7,6 +7,7 @@ import { usersRouter } from "./users/routes";
 import { stockRouter } from "./stock/routes";
 import { quotesRouter } from "./quotes/routes";
 import { dashboardRouter } from "./dashboard/routes";
+import { preAnalysesRouter } from "./pre-analyses/routes";
 
 const app = express();
 app.disable("x-powered-by");
@@ -16,6 +17,7 @@ app.use("/api/users", usersRouter);
 app.use("/api/stock", stockRouter);
 app.use("/api/quotes", quotesRouter);
 app.use("/api/dashboard", dashboardRouter);
+app.use("/api/pre-analyses", preAnalysesRouter);
 
 app.get("/api/health", (_req, res) => {
   res.json({
