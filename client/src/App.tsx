@@ -21,6 +21,7 @@ import { Link, Route, Switch, useLocation } from "wouter";
 import type { AuthenticatedUser, HealthResponse } from "@shared/contracts";
 import UsersPage from "./pages/UsersPage";
 import { ChangePasswordPage, ForgotPasswordForm, ResetPasswordPage } from "./pages/PasswordPages";
+import StockPage from "./pages/StockPage";
 
 const navigation = [
   { href: "/", label: "Visão geral", icon: LayoutDashboard },
@@ -204,7 +205,7 @@ function App() {
   if (!me.data) return <AuthPage onAuthenticated={user => queryClient.setQueryData(["current-user"], user)} />;
   if (me.data.mustChangePassword) return <ChangePasswordPage user={me.data} mandatory onChanged={user => queryClient.setQueryData(["current-user"], user)} />;
 
-  return <AppShell user={me.data} onLogout={logout}><Switch><Route path="/">{() => <Dashboard user={me.data!} />}</Route><Route path="/usuarios">{() => me.data!.role === "admin" ? <UsersPage currentUser={me.data!} /> : <ModulePage path="/estoque" />}</Route><Route path="/configuracoes">{() => <ChangePasswordPage user={me.data!} onChanged={user => queryClient.setQueryData(["current-user"], user)} />}</Route>{Object.keys(pageContent).filter(path => path !== "/usuarios" && path !== "/configuracoes").map(path => <Route key={path} path={path}>{() => <ModulePage path={path} />}</Route>)}<Route><ModulePage path="/estoque" /></Route></Switch></AppShell>;
+  return <AppShell user={me.data} onLogout={logout}><Switch><Route path="/">{() => <Dashboard user={me.data!} />}</Route><Route path="/estoque">{() => <StockPage user={me.data!} />}</Route><Route path="/usuarios">{() => me.data!.role === "admin" ? <UsersPage currentUser={me.data!} /> : <StockPage user={me.data!} />}</Route><Route path="/configuracoes">{() => <ChangePasswordPage user={me.data!} onChanged={user => queryClient.setQueryData(["current-user"], user)} />}</Route>{Object.keys(pageContent).filter(path => !["/estoque", "/usuarios", "/configuracoes"].includes(path)).map(path => <Route key={path} path={path}>{() => <ModulePage path={path} />}</Route>)}<Route><StockPage user={me.data!} /></Route></Switch></AppShell>;
 }
 
 export default App;

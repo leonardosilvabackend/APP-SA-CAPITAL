@@ -30,6 +30,15 @@ A interface inicial funciona sem banco. Operações persistentes só serão habi
 - Alterações e redefinições de senha invalidam as sessões anteriores do usuário.
 - Para testar links localmente, mantenha `APP_URL=http://localhost:3000` e o servidor em execução.
 
+## Estoque
+
+- Administradores cadastram e editam cotas, situação e destaque.
+- A consulta aceita busca, categoria, administradora e situação, com paginação no servidor.
+- Parceiros visualizam apenas cotas disponíveis; essa regra é aplicada pela API, não apenas pela interface.
+- Planilhas `.xlsx`, `.xls` e `.csv` passam por uma prévia obrigatória antes da importação.
+- A importação reconhece as colunas `Cód. Cota`, `Categoria`, `Crédito`, `Entrada`, `Nº Parcelas`, `Vlr Parcela`, `Saldo Devedor`, `Administradora` e `Fornecedor`.
+- Uma cota com código já existente é atualizada; códigos duplicados na mesma planilha são recusados.
+
 ## Verificações
 
 - `pnpm check`: valida o TypeScript
