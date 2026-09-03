@@ -66,5 +66,15 @@ Trabalhe em branches, teste localmente e abra uma revisão antes de unir altera�
 2. Implementar autenticação e perfis administrador/parceiro.
 3. Implementar estoque e importação de planilhas.
 4. Implementar simulador e histórico de cotações.
+
+## Regras implementadas
+
+- Perfis: Administrador, Administrativo, Assessor e Usuário, com vínculo entre Assessor e seus usuários.
+- Estoque com paginação 20/50/100, busca por múltiplos códigos, importação por adição ou substituição e busca inteligente local.
+- Junções sem limite funcional, sempre com a mesma categoria e administradora.
+- Cotações expiram após cinco dias e podem gerar pedidos de reserva; somente a aprovação administrativa reserva as cotas.
+- Pré-análises usam documentos dinâmicos, consentimento obrigatório e armazenamento privado no Supabase.
+- Documentos expiram dez dias após o retorno final da equipe administrativa.
+- Configurações comerciais ficam disponíveis ao administrador; segredos continuam somente nas variáveis de ambiente.
 5. Implementar pré-análises e documentos.
 6. Configurar testes de integração, preview e produção.

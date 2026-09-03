@@ -14,26 +14,31 @@ export const dashboardMetricsSchema = z.object({
   availableCredit: z.number(),
   savedQuotes: z.number(),
   activePartners: z.number(),
+  preAnalyses: z.number(),
+  pendingReservations: z.number(),
 });
 
 export type DashboardMetrics = z.infer<typeof dashboardMetricsSchema>;
 
-export const preAnalysisStatusSchema = z.enum(["draft", "pending", "approved", "rejected"]);
+export const preAnalysisStatusSchema = z.enum(["received", "pending", "approved", "rejected", "documents_requested"]);
 export const createPreAnalysisSchema = z.object({
   customerType: z.enum(["PF", "PJ"]),
   customerName: z.string().trim().min(3, "Informe o nome do cliente").max(160),
   document: z.string().transform(value => value.replace(/\D/g, "")),
-  status: preAnalysisStatusSchema.default("draft"),
+  incomeType: z.string().trim().min(2).max(60),
+  consent: z.literal(true, { error: "O consentimento é obrigatório" }),
+  status: preAnalysisStatusSchema.default("received"),
 }).refine(data => data.document.length === (data.customerType === "PF" ? 11 : 14), { message: "Informe um CPF ou CNPJ válido", path: ["document"] });
-export const updatePreAnalysisSchema = z.object({ status: preAnalysisStatusSchema });
+export const updatePreAnalysisSchema = z.object({ status: preAnalysisStatusSchema, observations: z.string().trim().max(5000).optional(), administratorId: z.string().uuid().nullable().optional() });
 
-export const userRoleSchema = z.enum(["admin", "partner"]);
+export const userRoleSchema = z.enum(["admin", "administrative", "advisor", "user"]);
 
 export const authenticatedUserSchema = z.object({
   id: z.string().uuid(),
   name: z.string(),
   email: z.string().email(),
   role: userRoleSchema,
+  managerId: z.string().uuid().nullable(),
   status: z.enum(["active", "inactive"]),
   mustChangePassword: z.boolean(),
 });
@@ -51,13 +56,15 @@ export const setupAdminInputSchema = loginInputSchema.extend({
 
 export const createUserInputSchema = setupAdminInputSchema.extend({
   phone: z.string().trim().max(32).optional(),
-  role: userRoleSchema.default("partner"),
+  role: userRoleSchema.default("user"),
+  managerId: z.string().uuid().nullable().optional(),
 });
 
 export const updateUserInputSchema = z.object({
   name: z.string().trim().min(3).max(160).optional(),
   phone: z.string().trim().max(32).nullable().optional(),
   role: userRoleSchema.optional(),
+  managerId: z.string().uuid().nullable().optional(),
   status: z.enum(["active", "inactive"]).optional(),
 }).refine(value => Object.keys(value).length > 0, "Informe ao menos uma alteração");
 

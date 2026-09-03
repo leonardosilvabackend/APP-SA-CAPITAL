@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 export const quoteCalculationInputSchema = z.object({
-  quotaIds: z.array(z.string().uuid()).min(1, "Selecione ao menos uma cota").max(12, "Selecione no máximo 12 cotas"),
+  quotaIds: z.array(z.string().uuid()).min(1, "Selecione ao menos uma cota"),
   commissionRate: z.number().min(0).max(8),
 });
 

@@ -6,6 +6,7 @@ import type { AuthenticatedUser } from "@shared/contracts";
 
 type UserRecord = AuthenticatedUser & {
   phone: string | null;
+  managerId: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -24,16 +25,16 @@ async function userApi(path = "", options?: RequestInit) {
 export default function UsersPage({ currentUser }: { currentUser: AuthenticatedUser }) {
   const queryClient = useQueryClient();
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({ name: "", email: "", phone: "", password: "", role: "partner" });
+  const [form, setForm] = useState({ name: "", email: "", phone: "", password: "", role: currentUser.role === "advisor" ? "user" : "user", managerId: currentUser.role === "advisor" ? currentUser.id : "" });
   const usersQuery = useQuery<UserRecord[]>({
     queryKey: ["users"],
     queryFn: async () => (await userApi()).users,
   });
   const createUser = useMutation({
-    mutationFn: () => userApi("", { method: "POST", body: JSON.stringify(form) }),
+    mutationFn: () => userApi("", { method: "POST", body: JSON.stringify({ ...form, managerId: form.managerId || null }) }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["users"] });
-      setForm({ name: "", email: "", phone: "", password: "", role: "partner" });
+      setForm({ name: "", email: "", phone: "", password: "", role: "user", managerId: currentUser.role === "advisor" ? currentUser.id : "" });
       setShowForm(false);
       toast.success("Usuário criado com sucesso");
     },
@@ -55,7 +56,7 @@ export default function UsersPage({ currentUser }: { currentUser: AuthenticatedU
   const records = usersQuery.data ?? [];
   return <section className="users-page">
     <div className="page-heading-row">
-      <div><span className="eyebrow">ADMINISTRAÇÃO</span><h1>Usuários</h1><p>Cadastre parceiros e controle os acessos à plataforma.</p></div>
+      <div><span className="eyebrow">ADMINISTRAÇÃO</span><h1>Usuários</h1><p>Cadastre usuários e controle os acessos à plataforma.</p></div>
       <button className="primary-button button-reset" onClick={() => setShowForm(value => !value)}><Plus size={18} /> Novo usuário</button>
     </div>
 
@@ -65,7 +66,8 @@ export default function UsersPage({ currentUser }: { currentUser: AuthenticatedU
         <label>Nome completo<input value={form.name} onChange={event => setForm({ ...form, name: event.target.value })} minLength={3} required /></label>
         <label>E-mail<input type="email" value={form.email} onChange={event => setForm({ ...form, email: event.target.value })} required /></label>
         <label>Telefone<input value={form.phone} onChange={event => setForm({ ...form, phone: event.target.value })} /></label>
-        <label>Perfil<select value={form.role} onChange={event => setForm({ ...form, role: event.target.value })}><option value="partner">Parceiro</option><option value="admin">Administrador</option></select></label>
+        <label>Perfil<select value={form.role} disabled={currentUser.role === "advisor"} onChange={event => setForm({ ...form, role: event.target.value, managerId: event.target.value === "user" ? form.managerId : "" })}><option value="user">Usuário</option>{currentUser.role === "admin" && <><option value="advisor">Assessor</option><option value="administrative">Administrativo</option><option value="admin">Administrador</option></>}</select></label>
+        {currentUser.role === "admin" && form.role === "user" && <label>Assessor responsável<select value={form.managerId} onChange={event => setForm({ ...form, managerId: event.target.value })}><option value="">Sem assessor</option>{records.filter(item => item.role === "advisor").map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>}
         <label>Senha inicial<input type="password" value={form.password} onChange={event => setForm({ ...form, password: event.target.value })} minLength={8} autoComplete="new-password" required /></label>
       </div>
       {createUser.error && <div className="auth-error" role="alert">{createUser.error.message}</div>}
@@ -86,8 +88,8 @@ export default function UsersPage({ currentUser }: { currentUser: AuthenticatedU
           const isSelf = user.id === currentUser.id;
           return <tr key={user.id}>
             <td><div className="user-cell"><span className="table-avatar">{user.name.split(/\s+/).slice(0, 2).map(part => part[0]).join("").toUpperCase()}</span><span><strong>{user.name}{isSelf ? " (você)" : ""}</strong><small>{user.email}{user.phone ? ` • ${user.phone}` : ""}</small></span></div></td>
-            <td><select aria-label={`Perfil de ${user.name}`} disabled={isSelf || updateUser.isPending} value={user.role} onChange={event => updateUser.mutate({ id: user.id, changes: { role: event.target.value } })}><option value="partner">Parceiro</option><option value="admin">Administrador</option></select></td>
-            <td><button className={`status-button ${user.status}`} disabled={isSelf || updateUser.isPending} onClick={() => updateUser.mutate({ id: user.id, changes: { status: user.status === "active" ? "inactive" : "active" } })}>{user.status === "active" ? <UserCheck size={15} /> : <UserX size={15} />}{user.status === "active" ? "Ativo" : "Inativo"}</button></td>
+            <td><select aria-label={`Perfil de ${user.name}`} disabled={currentUser.role !== "admin" || isSelf || updateUser.isPending} value={user.role} onChange={event => updateUser.mutate({ id: user.id, changes: { role: event.target.value } })}><option value="user">Usuário</option><option value="advisor">Assessor</option><option value="administrative">Administrativo</option><option value="admin">Administrador</option></select></td>
+            <td><button className={`status-button ${user.status}`} disabled={currentUser.role !== "admin" || isSelf || updateUser.isPending} onClick={() => updateUser.mutate({ id: user.id, changes: { status: user.status === "active" ? "inactive" : "active" } })}>{user.status === "active" ? <UserCheck size={15} /> : <UserX size={15} />}{user.status === "active" ? "Ativo" : "Inativo"}</button></td>
             <td>{new Intl.DateTimeFormat("pt-BR").format(new Date(user.createdAt))}</td>
           </tr>;
         })}</tbody>

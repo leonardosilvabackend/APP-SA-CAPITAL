@@ -22,3 +22,9 @@ export async function sendPasswordResetEmail(name: string, email: string, resetU
   });
   if (!response.ok) throw new Error(`Resend respondeu com status ${response.status}`);
 }
+
+export async function sendStatusEmail(name: string, email: string, subject: string, message: string) {
+  if (!config.resendApiKey || !config.resendFromEmail) return;
+  const response = await fetch(RESEND_ENDPOINT, { method: "POST", headers: { Authorization: `Bearer ${config.resendApiKey}`, "Content-Type": "application/json" }, body: JSON.stringify({ from: config.resendFromEmail, to: email, subject: `SA Capital — ${subject}`, html: `<main style="font-family:Arial,sans-serif;color:#17243a;max-width:560px;margin:auto"><h1 style="color:#123458">${escapeHtml(subject)}</h1><p>Olá, ${escapeHtml(name)}.</p><p>${escapeHtml(message)}</p></main>`, text: `Olá, ${name}.\n\n${message}` }) });
+  if (!response.ok) console.error(`[E-mail] Resend respondeu com status ${response.status}`);
+}

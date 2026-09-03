@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   BarChart3,
   Bell,
+  CircleUser,
   ChevronRight,
   FileSearch,
   LayoutDashboard,
@@ -21,14 +22,16 @@ import { ChangePasswordPage, ForgotPasswordForm, ResetPasswordPage } from "./pag
 import StockPage from "./pages/StockPage";
 import QuotesPage from "./pages/QuotesPage";
 import PreAnalysesPage from "./pages/PreAnalysesPage";
+import SettingsPage from "./pages/SettingsPage";
 
 const navigation = [
-  { href: "/", label: "Visão geral", icon: LayoutDashboard },
-  { href: "/estoque", label: "Estoque de cotas", icon: PackageSearch },
-  { href: "/cotacoes", label: "Cotações", icon: WalletCards },
-  { href: "/pre-analises", label: "Pré-análises", icon: FileSearch },
-  { href: "/usuarios", label: "Usuários", icon: Users },
-  { href: "/configuracoes", label: "Configurações", icon: Settings },
+  { href: "/", label: "Visão geral", icon: LayoutDashboard, roles: ["admin", "advisor", "user"] },
+  { href: "/estoque", label: "Estoque de cotas", icon: PackageSearch, roles: ["admin", "administrative", "advisor", "user"] },
+  { href: "/cotacoes", label: "Cotações", icon: WalletCards, roles: ["admin", "advisor", "user"] },
+  { href: "/pre-analises", label: "Pré-análises", icon: FileSearch, roles: ["admin", "administrative", "advisor", "user"] },
+  { href: "/usuarios", label: "Usuários", icon: Users, roles: ["admin", "advisor"] },
+  { href: "/perfil", label: "Perfil", icon: CircleUser, roles: ["admin", "administrative", "advisor", "user"] },
+  { href: "/configuracoes", label: "Configurações", icon: Settings, roles: ["admin", "administrative", "advisor", "user"] },
 ];
 
 const pageContent: Record<string, { title: string; description: string; icon: typeof PackageSearch }> = {
@@ -54,7 +57,7 @@ function AppShell({ children, user, onLogout }: { children: ReactNode; user: Aut
         </div>
         <nav>
           <p className="nav-caption">PLATAFORMA</p>
-          {navigation.filter(item => user.role === "admin" || item.href !== "/usuarios").map(item => {
+          {navigation.filter(item => item.roles.includes(user.role)).map(item => {
             const Icon = item.icon;
             const active = location === item.href;
             return <Link key={item.href} href={item.href} onClick={() => setOpen(false)} className={`nav-link ${active ? "nav-link-active" : ""}`}><Icon size={19} /><span>{item.label}</span></Link>;
@@ -62,7 +65,7 @@ function AppShell({ children, user, onLogout }: { children: ReactNode; user: Aut
         </nav>
         <div className="profile-card">
           <div className="avatar">{user.name.split(/\s+/).slice(0, 2).map(part => part[0]).join("").toUpperCase()}</div>
-          <div><strong>{user.name}</strong><span>{user.role === "admin" ? "Administrador" : "Parceiro"}</span></div>
+          <div><strong>{user.name}</strong><span>{{ admin: "Administrador", administrative: "Administrativo", advisor: "Assessor", user: "Usuário" }[user.role]}</span></div>
         </div>
       </aside>
       <div className="main-column">
@@ -96,6 +99,8 @@ function Dashboard({ user }: { user: AuthenticatedUser }) {
       return response.json();
     },
   });
+  const reservations = useQuery<{ items: { id: string; clientName: string; requesterName: string; createdAt: string }[] }>({ queryKey: ["pending-reservations"], queryFn: async () => { const response = await fetch("/api/dashboard/reservations"); if (!response.ok) throw new Error("Não foi possível carregar reservas"); return response.json(); }, enabled: user.role === "admin" });
+  const reviewReservation = useMutation({ mutationFn: async ({ id, status }: { id: string; status: "approved" | "rejected" }) => { const response = await fetch(`/api/quotes/reservations/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status }) }); if (!response.ok) throw new Error("Não foi possível revisar a reserva"); }, onSuccess: () => { void reservations.refetch(); void metrics.refetch(); } });
 
   const integer = (value?: number) => metrics.isLoading ? "…" : new Intl.NumberFormat("pt-BR").format(value ?? 0);
   const currency = (value?: number) => metrics.isLoading ? "…" : new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 }).format(value ?? 0);
@@ -105,6 +110,10 @@ function Dashboard({ user }: { user: AuthenticatedUser }) {
     { label: "Cotações salvas", value: integer(metrics.data?.savedQuotes), detail: user.role === "admin" ? "Histórico de toda a equipe" : "Seu histórico de cotações", icon: WalletCards, tone: "gold" },
     { label: "Parceiros ativos", value: integer(metrics.data?.activePartners), detail: "Acessos ativos na plataforma", icon: Users, tone: "green" },
     { label: "Volume disponível", value: currency(metrics.data?.availableCredit), detail: "Crédito total em estoque", icon: BarChart3, tone: "navy" },
+    ...(user.role === "admin" ? [
+      { label: "Pré-análises", value: integer(metrics.data?.preAnalyses), detail: "Registros recebidos", icon: FileSearch, tone: "green" },
+      { label: "Pedidos de reserva", value: integer(metrics.data?.pendingReservations), detail: "Aguardando aprovação", icon: Bell, tone: "gold" },
+    ] : []),
   ];
 
   return <>
@@ -115,11 +124,12 @@ function Dashboard({ user }: { user: AuthenticatedUser }) {
     <section className="metrics-grid">
       {cards.map(card => <article className="metric-card" key={card.label}><div className={`metric-icon ${card.tone}`}><card.icon size={21} /></div><span>{card.label}</span><strong>{card.value}</strong><small>{metrics.isError ? "Indicador temporariamente indisponível" : card.detail}</small></article>)}
     </section>
+    {user.role === "admin" && reservations.data?.items.length ? <section className="panel reservation-panel"><span className="eyebrow">PEDIDOS DE RESERVA</span><h2>Aguardando aprovação</h2>{reservations.data.items.map(item => <div className="reservation-row" key={item.id}><div><strong>{item.clientName}</strong><small>{item.requesterName} • {new Date(item.createdAt).toLocaleString("pt-BR")}</small></div><button className="secondary-button" onClick={() => reviewReservation.mutate({ id: item.id, status: "rejected" })}>Recusar</button><button className="primary-button button-reset" onClick={() => reviewReservation.mutate({ id: item.id, status: "approved" })}>Aprovar e reservar</button></div>)}</section> : null}
     <section className="content-grid">
       <article className="panel">
         <div className="panel-heading"><div><span className="eyebrow">ATALHOS</span><h2>Operação comercial</h2></div></div>
         <div className="quick-grid">
-          {navigation.slice(1, 5).map(item => <Link href={item.href} className="quick-link" key={item.href}><span className="quick-icon"><item.icon size={21} /></span><span><strong>{item.label}</strong><small>Acessar módulo</small></span><ChevronRight size={18} /></Link>)}
+          {navigation.filter(item => item.href !== "/" && item.roles.includes(user.role)).slice(0, 4).map(item => <Link href={item.href} className="quick-link" key={item.href}><span className="quick-icon"><item.icon size={21} /></span><span><strong>{item.label}</strong><small>Acessar módulo</small></span><ChevronRight size={18} /></Link>)}
         </div>
       </article>
       <article className="panel status-panel">
@@ -212,7 +222,7 @@ function App() {
   if (!me.data) return <AuthPage onAuthenticated={user => queryClient.setQueryData(["current-user"], user)} />;
   if (me.data.mustChangePassword) return <ChangePasswordPage user={me.data} mandatory onChanged={user => queryClient.setQueryData(["current-user"], user)} />;
 
-  return <AppShell user={me.data} onLogout={logout}><Switch><Route path="/">{() => <Dashboard user={me.data!} />}</Route><Route path="/estoque">{() => <StockPage user={me.data!} />}</Route><Route path="/cotacoes" component={QuotesPage} /><Route path="/pre-analises">{() => <PreAnalysesPage user={me.data!} />}</Route><Route path="/usuarios">{() => me.data!.role === "admin" ? <UsersPage currentUser={me.data!} /> : <StockPage user={me.data!} />}</Route><Route path="/configuracoes">{() => <ChangePasswordPage user={me.data!} onChanged={user => queryClient.setQueryData(["current-user"], user)} />}</Route>{Object.keys(pageContent).filter(path => !["/estoque", "/cotacoes", "/pre-analises", "/usuarios", "/configuracoes"].includes(path)).map(path => <Route key={path} path={path}>{() => <ModulePage path={path} />}</Route>)}<Route><StockPage user={me.data!} /></Route></Switch></AppShell>;
+  return <AppShell user={me.data} onLogout={logout}><Switch><Route path="/">{() => <Dashboard user={me.data!} />}</Route><Route path="/estoque">{() => <StockPage user={me.data!} />}</Route><Route path="/cotacoes" component={QuotesPage} /><Route path="/pre-analises">{() => <PreAnalysesPage user={me.data!} />}</Route><Route path="/usuarios">{() => ["admin", "advisor"].includes(me.data!.role) ? <UsersPage currentUser={me.data!} /> : <StockPage user={me.data!} />}</Route><Route path="/perfil">{() => <ChangePasswordPage user={me.data!} onChanged={user => queryClient.setQueryData(["current-user"], user)} />}</Route><Route path="/configuracoes">{() => <SettingsPage user={me.data!} onChanged={user => queryClient.setQueryData(["current-user"], user)} />}</Route>{Object.keys(pageContent).filter(path => !["/estoque", "/cotacoes", "/pre-analises", "/usuarios", "/configuracoes"].includes(path)).map(path => <Route key={path} path={path}>{() => <ModulePage path={path} />}</Route>)}<Route><StockPage user={me.data!} /></Route></Switch></AppShell>;
 }
 
 export default App;

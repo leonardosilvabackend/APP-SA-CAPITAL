@@ -1,44 +1,20 @@
-import { and, desc, eq } from "drizzle-orm";
-import { Router, type NextFunction, type Request, type RequestHandler, type Response } from "express";
+import { createClient } from "@supabase/supabase-js";
+import { and, desc, eq, inArray, lt, or } from "drizzle-orm";
+import express, { Router, type NextFunction, type Request, type RequestHandler, type Response } from "express";
 import { createPreAnalysisSchema, updatePreAnalysisSchema } from "../../shared/contracts";
 import { getCurrentUser } from "../auth/current-user";
+import { config } from "../config";
 import { getDatabase } from "../db/client";
-import { preAnalyses, users } from "../db/schema";
-
-export const preAnalysesRouter = Router();
-function asyncRoute(handler: (req: Request, res: Response, next: NextFunction) => Promise<unknown>): RequestHandler { return (req, res, next) => { void handler(req, res, next).catch(next); }; }
-
-preAnalysesRouter.get("/", asyncRoute(async (req, res) => {
-  const user = await getCurrentUser(req);
-  if (!user) return res.status(401).json({ error: "Faça login para continuar" });
-  const db = getDatabase();
-  if (!db) return res.status(503).json({ error: "Banco de dados não configurado" });
-  const fields = { id: preAnalyses.id, partnerId: preAnalyses.partnerId, partnerName: users.name, customerType: preAnalyses.customerType, customerName: preAnalyses.customerName, document: preAnalyses.document, status: preAnalyses.status, createdAt: preAnalyses.createdAt, updatedAt: preAnalyses.updatedAt };
-  const base = db.select(fields).from(preAnalyses).innerJoin(users, eq(preAnalyses.partnerId, users.id));
-  const items = user.role === "admin" ? await base.orderBy(desc(preAnalyses.createdAt)) : await base.where(eq(preAnalyses.partnerId, user.id)).orderBy(desc(preAnalyses.createdAt));
-  return res.json({ items });
-}));
-
-preAnalysesRouter.post("/", asyncRoute(async (req, res) => {
-  const user = await getCurrentUser(req);
-  if (!user) return res.status(401).json({ error: "Faça login para continuar" });
-  const parsed = createPreAnalysisSchema.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Dados inválidos" });
-  const db = getDatabase();
-  if (!db) return res.status(503).json({ error: "Banco de dados não configurado" });
-  const [item] = await db.insert(preAnalyses).values({ ...parsed.data, partnerId: user.id }).returning();
-  return res.status(201).json({ item });
-}));
-
-preAnalysesRouter.patch("/:id", asyncRoute(async (req, res) => {
-  const user = await getCurrentUser(req);
-  if (!user) return res.status(401).json({ error: "Faça login para continuar" });
-  const parsed = updatePreAnalysisSchema.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Status inválido" });
-  const db = getDatabase();
-  if (!db) return res.status(503).json({ error: "Banco de dados não configurado" });
-  const where = user.role === "admin" ? eq(preAnalyses.id, req.params.id) : and(eq(preAnalyses.id, req.params.id), eq(preAnalyses.partnerId, user.id));
-  const [item] = await db.update(preAnalyses).set({ status: parsed.data.status, updatedAt: new Date() }).where(where).returning();
-  if (!item) return res.status(404).json({ error: "Pré-análise não encontrada" });
-  return res.json({ item });
-}));
+import { appSettings, preAnalyses, preAnalysisDocuments, users } from "../db/schema";
+import { sendStatusEmail } from "../email";
+export const preAnalysesRouter=Router();
+const storage=()=>createClient(config.supabaseUrl,config.supabaseServiceRoleKey,{auth:{persistSession:false}}).storage.from(config.storageBucket);
+function asyncRoute(handler:(req:Request,res:Response,next:NextFunction)=>Promise<unknown>):RequestHandler{return(req,res,next)=>{void handler(req,res,next).catch(next);};}
+function scope(user:NonNullable<Awaited<ReturnType<typeof getCurrentUser>>>){return ["admin","administrative"].includes(user.role)?undefined:user.role==="advisor"?or(eq(preAnalyses.partnerId,user.id),eq(users.managerId,user.id)):eq(preAnalyses.partnerId,user.id);}
+export async function cleanupExpiredDocuments(){const db=getDatabase();if(!db||!config.supabaseUrl||!config.supabaseServiceRoleKey)return;const expired=await db.select().from(preAnalysisDocuments).where(lt(preAnalysisDocuments.expiresAt,new Date()));if(expired.length){await storage().remove(expired.map(d=>d.storagePath));await db.delete(preAnalysisDocuments).where(inArray(preAnalysisDocuments.id,expired.map(d=>d.id)));}}
+async function cleanup(){return cleanupExpiredDocuments();}
+preAnalysesRouter.get("/",asyncRoute(async(req,res)=>{const user=await getCurrentUser(req);if(!user)return res.status(401).json({error:"Faça login"});await cleanup();const db=getDatabase()!;const fields={id:preAnalyses.id,partnerId:preAnalyses.partnerId,partnerName:users.name,customerType:preAnalyses.customerType,customerName:preAnalyses.customerName,document:preAnalyses.document,incomeType:preAnalyses.incomeType,status:preAnalyses.status,observations:preAnalyses.observations,administratorId:preAnalyses.administratorId,consentAt:preAnalyses.consentAt,returnedAt:preAnalyses.returnedAt,createdAt:preAnalyses.createdAt,updatedAt:preAnalyses.updatedAt};const base=db.select(fields).from(preAnalyses).innerJoin(users,eq(preAnalyses.partnerId,users.id));const access=scope(user);const items=access?await base.where(access).orderBy(desc(preAnalyses.createdAt)):await base.orderBy(desc(preAnalyses.createdAt));const docs=items.length?await db.select().from(preAnalysisDocuments).where(inArray(preAnalysisDocuments.preAnalysisId,items.map(i=>i.id))):[];return res.json({items:items.map(i=>({...i,documents:docs.filter(d=>d.preAnalysisId===i.id).map(({storagePath:_p,...d})=>d)}))});}));
+preAnalysesRouter.post("/",asyncRoute(async(req,res)=>{const user=await getCurrentUser(req);if(!user||user.role==="administrative")return res.status(403).json({error:"Seu perfil não envia pré-análises"});const parsed=createPreAnalysisSchema.safeParse(req.body);if(!parsed.success)return res.status(400).json({error:parsed.error.issues[0]?.message});const db=getDatabase()!;const {consent,...data}=parsed.data;const [item]=await db.insert(preAnalyses).values({...data,partnerId:user.id,consentAt:new Date()}).returning();return res.status(201).json({item,message:"Pré-análise enviada com sucesso. O retorno será enviado para o e-mail cadastrado."});}));
+preAnalysesRouter.patch("/:id",asyncRoute(async(req,res)=>{const user=await getCurrentUser(req);if(!user||!["admin","administrative"].includes(user.role))return res.status(403).json({error:"Somente a equipe administrativa analisa"});const parsed=updatePreAnalysisSchema.safeParse(req.body);if(!parsed.success)return res.status(400).json({error:parsed.error.issues[0]?.message});const db=getDatabase()!;const completed=["approved","rejected"].includes(parsed.data.status);const returnedAt=completed?new Date():null;const [item]=await db.update(preAnalyses).set({...parsed.data,administratorId:parsed.data.administratorId??user.id,returnedAt,updatedAt:new Date()}).where(eq(preAnalyses.id,req.params.id)).returning();if(!item)return res.status(404).json({error:"Pré-análise não encontrada"});if(completed){const expiresAt=new Date(Date.now()+10*86400000);await db.update(preAnalysisDocuments).set({expiresAt}).where(eq(preAnalysisDocuments.preAnalysisId,item.id));const [owner]=await db.select().from(users).where(eq(users.id,item.partnerId)).limit(1);if(owner)void sendStatusEmail(owner.name,owner.email,"Retorno da pré-análise",`A pré-análise de ${item.customerName} foi atualizada para ${parsed.data.status==="approved"?"Aprovada":"Reprovada"}.`);}return res.json({item});}));
+preAnalysesRouter.post("/:id/documents",express.raw({type:["application/pdf","image/jpeg","image/png"],limit:"25mb"}),asyncRoute(async(req,res)=>{const user=await getCurrentUser(req);if(!user)return res.status(401).json({error:"Faça login"});if(!config.supabaseUrl||!config.supabaseServiceRoleKey)return res.status(503).json({error:"Armazenamento privado não configurado"});const db=getDatabase()!;const access=scope(user);const condition=access?and(eq(preAnalyses.id,req.params.id),access):eq(preAnalyses.id,req.params.id);const [analysis]=await db.select({id:preAnalyses.id}).from(preAnalyses).innerJoin(users,eq(preAnalyses.partnerId,users.id)).where(condition).limit(1);if(!analysis)return res.status(404).json({error:"Pré-análise não encontrada"});const [settings]=await db.select().from(appSettings).limit(1);const mime=req.headers["content-type"]?.split(";")[0]??"";const body=Buffer.isBuffer(req.body)?req.body:Buffer.alloc(0);if(!settings?.allowedFileTypes.includes(mime))return res.status(400).json({error:"Tipo de arquivo não permitido"});if(body.length>settings.maxFileSizeMb*1024*1024)return res.status(400).json({error:`Arquivo maior que ${settings.maxFileSizeMb} MB`});const rawName=decodeURIComponent(String(req.headers["x-file-name"]??"documento")).replace(/[^a-zA-Z0-9._-]/g,"_");const documentType=decodeURIComponent(String(req.headers["x-document-type"]??"Documento")).slice(0,100);const path=`${analysis.id}/${crypto.randomUUID()}-${rawName}`;const uploaded=await storage().upload(path,body,{contentType:mime,upsert:false});if(uploaded.error)return res.status(500).json({error:"Não foi possível enviar o documento"});const [document]=await db.insert(preAnalysisDocuments).values({preAnalysisId:analysis.id,documentType,fileName:rawName,storagePath:path,mimeType:mime,size:body.length}).returning();return res.status(201).json({document:{...document,storagePath:undefined}});}));
+preAnalysesRouter.get("/:id/documents/:documentId",asyncRoute(async(req,res)=>{const user=await getCurrentUser(req);if(!user)return res.status(401).json({error:"Faça login"});const db=getDatabase()!;const access=scope(user);const condition=access?and(eq(preAnalyses.id,req.params.id),access):eq(preAnalyses.id,req.params.id);const [doc]=await db.select({storagePath:preAnalysisDocuments.storagePath}).from(preAnalysisDocuments).innerJoin(preAnalyses,eq(preAnalysisDocuments.preAnalysisId,preAnalyses.id)).innerJoin(users,eq(preAnalyses.partnerId,users.id)).where(and(eq(preAnalysisDocuments.id,req.params.documentId),condition)).limit(1);if(!doc)return res.status(404).json({error:"Documento não encontrado"});const signed=await storage().createSignedUrl(doc.storagePath,60);if(signed.error)return res.status(500).json({error:"Não foi possível abrir o documento"});return res.json({url:signed.data.signedUrl});}));

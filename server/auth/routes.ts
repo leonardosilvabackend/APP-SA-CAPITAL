@@ -18,7 +18,7 @@ function asyncRoute(handler: (req: Request, res: Response, next: NextFunction) =
 }
 
 function publicUser(user: typeof users.$inferSelect): AuthenticatedUser {
-  return { id: user.id, name: user.name, email: user.email, role: user.role, status: user.status, mustChangePassword: user.mustChangePassword };
+  return { id: user.id, name: user.name, email: user.email, role: user.role === "partner" ? "user" : user.role, managerId: user.managerId, status: user.status, mustChangePassword: user.mustChangePassword };
 }
 
 function requestKey(req: Request) {

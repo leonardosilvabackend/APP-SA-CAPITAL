@@ -11,7 +11,7 @@ function parseBrazilianNumber(value: unknown) {
 const positiveMoney = z.preprocess(parseBrazilianNumber, z.number().finite().nonnegative("O valor não pode ser negativo"));
 const positiveInteger = z.preprocess(value => typeof value === "string" ? Number(value.trim()) : value, z.number().int().positive("Informe uma quantidade válida"));
 
-export const quotaStatusSchema = z.enum(["available", "reserved", "sold"]);
+export const quotaStatusSchema = z.enum(["available", "reserved"]);
 
 export const quotaInputSchema = z.object({
   code: z.string().trim().min(1, "Informe o código").max(80),
@@ -28,7 +28,7 @@ export const quotaInputSchema = z.object({
 });
 
 export const quotaUpdateSchema = quotaInputSchema.partial().refine(value => Object.keys(value).length > 0, "Informe ao menos uma alteração");
-export const quotaImportSchema = z.object({ rows: z.array(z.unknown()).min(1).max(5000) });
+export const quotaImportSchema = z.object({ rows: z.array(z.unknown()).min(1).max(20000), mode: z.enum(["add", "replace"]).default("add") });
 export type QuotaInput = z.infer<typeof quotaInputSchema>;
 
 export function validateImportRows(rows: unknown[]) {
