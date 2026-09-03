@@ -38,6 +38,7 @@ A interface inicial funciona sem banco. Operações persistentes só serão habi
 - Planilhas `.xlsx`, `.xls` e `.csv` passam por uma prévia obrigatória antes da importação.
 - A importação reconhece as colunas `Cód. Cota`, `Categoria`, `Crédito`, `Entrada`, `Nº Parcelas`, `Vlr Parcela`, `Saldo Devedor`, `Administradora` e `Fornecedor`.
 - Uma cota com código já existente é atualizada; códigos duplicados na mesma planilha são recusados.
+- `examples/estoque-exemplo.csv` contém duas cotas fictícias para validar o importador.
 
 ## Verificações
 

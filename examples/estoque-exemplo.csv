@@ -1,0 +1,3 @@
+Cód. Cota;Categoria;Crédito;Entrada;Nº Parcelas;Vlr Parcela;Saldo Devedor;Administradora;Fornecedor;Situação;Destaque
+TESTE-001;Imóvel;150000,00;30000,00;120;1250,00;120000,00;Administradora Teste;Fornecedor Teste;Disponível;Sim
+TESTE-002;Veículo;80000,00;16000,00;80;950,00;64000,00;Administradora Teste;Fornecedor Teste;Reservada;Não
