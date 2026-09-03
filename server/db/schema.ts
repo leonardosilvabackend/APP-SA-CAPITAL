@@ -1,4 +1,5 @@
-import { boolean, index, integer, numeric, pgEnum, pgTable, text, timestamp, uuid, varchar } from "drizzle-orm/pg-core";
+import { boolean, index, integer, jsonb, numeric, pgEnum, pgTable, text, timestamp, uuid, varchar } from "drizzle-orm/pg-core";
+import type { CalculationQuota } from "../../shared/quote";
 
 export const userRole = pgEnum("user_role", ["admin", "partner"]);
 export const userStatus = pgEnum("user_status", ["active", "inactive"]);
@@ -43,6 +44,15 @@ export const quotas = pgTable("quotas", {
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });
+
+export const savedQuotes = pgTable("saved_quotes", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  clientName: varchar("client_name", { length: 180 }).notNull(),
+  creatorId: uuid("creator_id").references(() => users.id).notNull(),
+  selectedQuotas: jsonb("selected_quotas").$type<CalculationQuota[]>().notNull(),
+  commissionRate: numeric("commission_rate", { precision: 5, scale: 2 }).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, table => [index("saved_quotes_creator_id_idx").on(table.creatorId), index("saved_quotes_created_at_idx").on(table.createdAt)]);
 
 export const proposals = pgTable("proposals", {
   id: uuid("id").defaultRandom().primaryKey(),

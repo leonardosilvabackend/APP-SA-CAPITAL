@@ -2,7 +2,6 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   BarChart3,
   Bell,
-  Calculator,
   ChevronRight,
   ClipboardCheck,
   FileSearch,
@@ -22,12 +21,11 @@ import type { AuthenticatedUser, HealthResponse } from "@shared/contracts";
 import UsersPage from "./pages/UsersPage";
 import { ChangePasswordPage, ForgotPasswordForm, ResetPasswordPage } from "./pages/PasswordPages";
 import StockPage from "./pages/StockPage";
-import SimulatorPage from "./pages/SimulatorPage";
+import QuotesPage from "./pages/QuotesPage";
 
 const navigation = [
   { href: "/", label: "Visão geral", icon: LayoutDashboard },
   { href: "/estoque", label: "Estoque de cotas", icon: PackageSearch },
-  { href: "/simulador", label: "Simulador", icon: Calculator },
   { href: "/cotacoes", label: "Cotações", icon: WalletCards },
   { href: "/propostas", label: "Propostas", icon: Handshake },
   { href: "/pre-analises", label: "Pré-análises", icon: FileSearch },
@@ -37,7 +35,6 @@ const navigation = [
 
 const pageContent: Record<string, { title: string; description: string; icon: typeof PackageSearch }> = {
   "/estoque": { title: "Estoque de cotas", description: "Consulta, filtros e importação do estoque contemplado.", icon: PackageSearch },
-  "/simulador": { title: "Simulador", description: "Composição de condições e comissão comercial.", icon: Calculator },
   "/cotacoes": { title: "Cotações", description: "Histórico de cotações salvas e compartilhadas.", icon: WalletCards },
   "/propostas": { title: "Propostas", description: "Acompanhamento do funil comercial.", icon: Handshake },
   "/pre-analises": { title: "Pré-análises", description: "Documentos e etapas da análise cadastral.", icon: FileSearch },
@@ -206,7 +203,7 @@ function App() {
   if (!me.data) return <AuthPage onAuthenticated={user => queryClient.setQueryData(["current-user"], user)} />;
   if (me.data.mustChangePassword) return <ChangePasswordPage user={me.data} mandatory onChanged={user => queryClient.setQueryData(["current-user"], user)} />;
 
-  return <AppShell user={me.data} onLogout={logout}><Switch><Route path="/">{() => <Dashboard user={me.data!} />}</Route><Route path="/estoque">{() => <StockPage user={me.data!} />}</Route><Route path="/simulador" component={SimulatorPage} /><Route path="/usuarios">{() => me.data!.role === "admin" ? <UsersPage currentUser={me.data!} /> : <StockPage user={me.data!} />}</Route><Route path="/configuracoes">{() => <ChangePasswordPage user={me.data!} onChanged={user => queryClient.setQueryData(["current-user"], user)} />}</Route>{Object.keys(pageContent).filter(path => !["/estoque", "/simulador", "/usuarios", "/configuracoes"].includes(path)).map(path => <Route key={path} path={path}>{() => <ModulePage path={path} />}</Route>)}<Route><StockPage user={me.data!} /></Route></Switch></AppShell>;
+  return <AppShell user={me.data} onLogout={logout}><Switch><Route path="/">{() => <Dashboard user={me.data!} />}</Route><Route path="/estoque">{() => <StockPage user={me.data!} />}</Route><Route path="/cotacoes" component={QuotesPage} /><Route path="/usuarios">{() => me.data!.role === "admin" ? <UsersPage currentUser={me.data!} /> : <StockPage user={me.data!} />}</Route><Route path="/configuracoes">{() => <ChangePasswordPage user={me.data!} onChanged={user => queryClient.setQueryData(["current-user"], user)} />}</Route>{Object.keys(pageContent).filter(path => !["/estoque", "/cotacoes", "/usuarios", "/configuracoes"].includes(path)).map(path => <Route key={path} path={path}>{() => <ModulePage path={path} />}</Route>)}<Route><StockPage user={me.data!} /></Route></Switch></AppShell>;
 }
 
 export default App;

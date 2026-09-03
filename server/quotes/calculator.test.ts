@@ -21,7 +21,8 @@ describe("cálculo de cotação", () => {
   });
   it("não revela comissão no texto comercial", () => {
     const text = commercialQuoteText(quotas, 3);
-    expect(text).toContain("ENTRADA: R$ 45.000,00");
+    expect(text).toContain("ENTRADA: R$ 51.000,00");
+    expect(text).toContain("25,50%");
     expect(text).not.toContain("6.000");
     expect(text).not.toContain("3%");
   });

@@ -59,8 +59,7 @@ export function calculateQuote(quotas: CalculationQuota[], commissionRate: numbe
 export function commercialQuoteText(quotas: CalculationQuota[], commissionRate: number) {
   const summary = calculateQuote(quotas, commissionRate);
   const money = (value: number) => new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(value);
-  const baseEntryPercentage = summary.creditTotal ? summary.baseEntryTotal / summary.creditTotal * 100 : 0;
   const categories = Array.from(new Set(quotas.map(quota => quota.category.toUpperCase()))).join(" / ");
   const administrators = Array.from(new Set(quotas.map(quota => quota.administrator))).join(" / ");
-  return `CARTA DE ${categories}\n\nAdministradora: ${administrators}\n\nCRÉDITO: ${money(summary.creditTotal)}\n\nENTRADA: ${money(summary.baseEntryTotal)} - ${baseEntryPercentage.toFixed(2).replace(".", ",")}%\n(sem comissão)\n\nPRAZO/PARCELA:\n${summary.installmentCascade.map(item => `• ${item.from}ª à ${item.to}ª: ${money(item.amount)}`).join("\n")}\n\nSALDO DEVEDOR: ${money(summary.outstandingBalanceTotal)}\nTAXA DE TRANSFERÊNCIA: ${money(summary.transferFeeTotal)}\nSEGURO DE VIDA: ${money(summary.insuranceTotal)}`;
+  return `CARTA DE ${categories}\n\nAdministradora: ${administrators}\n\nCRÉDITO: ${money(summary.creditTotal)}\n\nENTRADA: ${money(summary.finalEntryTotal)} - ${summary.entryPercentage.toFixed(2).replace(".", ",")}%\n\nPRAZO/PARCELA:\n${summary.installmentCascade.map(item => `• ${item.from}ª à ${item.to}ª: ${money(item.amount)}`).join("\n")}\n\nSALDO DEVEDOR: ${money(summary.outstandingBalanceTotal)}\nTAXA DE TRANSFERÊNCIA: ${money(summary.transferFeeTotal)}\nSEGURO DE VIDA: ${money(summary.insuranceTotal)}`;
 }
