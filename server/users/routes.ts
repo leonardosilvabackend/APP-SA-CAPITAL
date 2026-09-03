@@ -54,6 +54,7 @@ usersRouter.post("/", asyncRoute(async (req, res) => {
       passwordHash,
       role: parsed.data.role,
       status: "active",
+      mustChangePassword: true,
     }).returning();
     return res.status(201).json({ user: publicUser(created) });
   } catch (error) {

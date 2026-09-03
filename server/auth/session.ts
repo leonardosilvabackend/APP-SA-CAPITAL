@@ -10,8 +10,8 @@ function secretKey() {
   return new TextEncoder().encode(config.jwtSecret);
 }
 
-export async function createSessionToken(userId: string) {
-  return new SignJWT({ role: "user" })
+export async function createSessionToken(userId: string, sessionVersion: number) {
+  return new SignJWT({ role: "user", sessionVersion })
     .setProtectedHeader({ alg: "HS256", typ: "JWT" })
     .setSubject(userId)
     .setIssuedAt()
@@ -22,7 +22,8 @@ export async function createSessionToken(userId: string) {
 export async function readSessionToken(token: string) {
   try {
     const { payload } = await jwtVerify(token, secretKey(), { algorithms: ["HS256"] });
-    return payload.sub ?? null;
+    if (!payload.sub || typeof payload.sessionVersion !== "number") return null;
+    return { userId: payload.sub, sessionVersion: payload.sessionVersion };
   } catch {
     return null;
   }

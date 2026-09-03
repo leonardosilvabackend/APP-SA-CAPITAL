@@ -20,6 +20,7 @@ import { useState, type ReactNode } from "react";
 import { Link, Route, Switch, useLocation } from "wouter";
 import type { AuthenticatedUser, HealthResponse } from "@shared/contracts";
 import UsersPage from "./pages/UsersPage";
+import { ChangePasswordPage, ForgotPasswordForm, ResetPasswordPage } from "./pages/PasswordPages";
 
 const navigation = [
   { href: "/", label: "Visão geral", icon: LayoutDashboard },
@@ -145,6 +146,7 @@ function AuthPage({ onAuthenticated }: { onAuthenticated: (user: AuthenticatedUs
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [forgotPassword, setForgotPassword] = useState(false);
   const isSetup = setup.data?.needsSetup === true;
   const submit = useMutation({
     mutationFn: () => authRequest(isSetup ? "setup-admin" : "login", { ...(isSetup ? { name } : {}), email, password }),
@@ -159,7 +161,8 @@ function AuthPage({ onAuthenticated }: { onAuthenticated: (user: AuthenticatedUs
       <small>Ambiente protegido • SA Capital</small>
     </section>
     <section className="auth-form-panel">
-      <form className="auth-card" onSubmit={event => { event.preventDefault(); submit.mutate(); }}>
+      <div className="auth-card">
+        {forgotPassword && !isSetup ? <ForgotPasswordForm onBack={() => setForgotPassword(false)} /> : <form onSubmit={event => { event.preventDefault(); submit.mutate(); }}>
         <span className="eyebrow">{isSetup ? "CONFIGURAÇÃO INICIAL" : "ACESSO À PLATAFORMA"}</span>
         <h2>{isSetup ? "Criar administrador" : "Bem-vindo de volta"}</h2>
         <p>{isSetup ? "Este cadastro é único e terá controle administrativo do sistema." : "Entre com seu e-mail e sua senha."}</p>
@@ -170,7 +173,9 @@ function AuthPage({ onAuthenticated }: { onAuthenticated: (user: AuthenticatedUs
         {submit.error && <div className="auth-error" role="alert">{submit.error.message}</div>}
         {setup.isError && <div className="auth-error" role="alert">Não foi possível consultar o banco de dados.</div>}
         <button className="auth-submit" disabled={submit.isPending || setup.isError}>{submit.isPending ? "Aguarde…" : isSetup ? "Criar acesso administrativo" : "Entrar"}</button>
-      </form>
+        {!isSetup && <button type="button" className="text-button" onClick={() => setForgotPassword(true)}>Esqueci minha senha</button>}
+        </form>}
+      </div>
     </section>
   </div>;
 }
@@ -192,10 +197,14 @@ function App() {
     queryClient.setQueryData(["current-user"], null);
   };
 
+  const resetToken = window.location.pathname === "/reset-password" ? new URLSearchParams(window.location.search).get("token") : null;
+
+  if (resetToken) return <ResetPasswordPage token={resetToken} />;
   if (me.isLoading) return <div className="auth-loading">Validando sessão…</div>;
   if (!me.data) return <AuthPage onAuthenticated={user => queryClient.setQueryData(["current-user"], user)} />;
+  if (me.data.mustChangePassword) return <ChangePasswordPage user={me.data} mandatory onChanged={user => queryClient.setQueryData(["current-user"], user)} />;
 
-  return <AppShell user={me.data} onLogout={logout}><Switch><Route path="/">{() => <Dashboard user={me.data!} />}</Route><Route path="/usuarios">{() => me.data!.role === "admin" ? <UsersPage currentUser={me.data!} /> : <ModulePage path="/estoque" />}</Route>{Object.keys(pageContent).filter(path => path !== "/usuarios").map(path => <Route key={path} path={path}>{() => <ModulePage path={path} />}</Route>)}<Route><ModulePage path="/estoque" /></Route></Switch></AppShell>;
+  return <AppShell user={me.data} onLogout={logout}><Switch><Route path="/">{() => <Dashboard user={me.data!} />}</Route><Route path="/usuarios">{() => me.data!.role === "admin" ? <UsersPage currentUser={me.data!} /> : <ModulePage path="/estoque" />}</Route><Route path="/configuracoes">{() => <ChangePasswordPage user={me.data!} onChanged={user => queryClient.setQueryData(["current-user"], user)} />}</Route>{Object.keys(pageContent).filter(path => path !== "/usuarios" && path !== "/configuracoes").map(path => <Route key={path} path={path}>{() => <ModulePage path={path} />}</Route>)}<Route><ModulePage path="/estoque" /></Route></Switch></AppShell>;
 }
 
 export default App;

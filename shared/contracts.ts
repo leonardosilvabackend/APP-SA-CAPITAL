@@ -17,6 +17,7 @@ export const authenticatedUserSchema = z.object({
   email: z.string().email(),
   role: userRoleSchema,
   status: z.enum(["active", "inactive"]),
+  mustChangePassword: z.boolean(),
 });
 
 export type AuthenticatedUser = z.infer<typeof authenticatedUserSchema>;
@@ -41,3 +42,17 @@ export const updateUserInputSchema = z.object({
   role: userRoleSchema.optional(),
   status: z.enum(["active", "inactive"]).optional(),
 }).refine(value => Object.keys(value).length > 0, "Informe ao menos uma alteração");
+
+export const requestPasswordResetInputSchema = z.object({
+  email: z.string().trim().email("Informe um e-mail válido").max(320).transform(value => value.toLowerCase()),
+});
+
+export const resetPasswordInputSchema = z.object({
+  token: z.string().min(40).max(200),
+  password: z.string().min(8, "A senha deve ter ao menos 8 caracteres").max(128),
+});
+
+export const changePasswordInputSchema = z.object({
+  currentPassword: z.string().min(1, "Informe a senha atual").max(128),
+  newPassword: z.string().min(8, "A nova senha deve ter ao menos 8 caracteres").max(128),
+}).refine(value => value.currentPassword !== value.newPassword, { message: "A nova senha deve ser diferente da atual", path: ["newPassword"] });

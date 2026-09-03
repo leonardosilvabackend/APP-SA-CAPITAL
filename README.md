@@ -21,6 +21,15 @@ Nova plataforma independente da SA Capital. O projeto antigo desenvolvido no Man
 
 A interface inicial funciona sem banco. Operações persistentes só serão habilitadas depois da configuração do PostgreSQL.
 
+## Autenticação
+
+- O primeiro acesso cria um único administrador quando o banco ainda não possui usuários.
+- Administradores criam parceiros e outros administradores pela página `Usuários`.
+- Novos usuários devem trocar a senha inicial antes de acessar o painel.
+- `Esqueci minha senha` envia pelo Resend um link de uso único válido por uma hora.
+- Alterações e redefinições de senha invalidam as sessões anteriores do usuário.
+- Para testar links localmente, mantenha `APP_URL=http://localhost:3000` e o servidor em execução.
+
 ## Verificações
 
 - `pnpm check`: valida o TypeScript
