@@ -38,6 +38,14 @@ A interface inicial funciona sem banco. Operações persistentes só serão habi
 - Planilhas `.xlsx`, `.xls` e `.csv` passam por uma prévia obrigatória antes da importação.
 - A importação reconhece as colunas `Cód. Cota`, `Categoria`, `Crédito`, `Entrada`, `Nº Parcelas`, `Vlr Parcela`, `Saldo Devedor`, `Administradora` e `Fornecedor`.
 - Uma cota com código já existente é atualizada; códigos duplicados na mesma planilha são recusados.
+
+## Simulador de cotação
+
+- Até 12 cotas disponíveis podem ser selecionadas diretamente no estoque.
+- Crédito, entrada original, comissão de 0% a 8%, entrada final, saldo, transferência e seguro são recalculados no servidor.
+- Parcelas com prazos diferentes são apresentadas em cascata por intervalo.
+- O resumo privado mostra a comissão; o texto comercial copiado omite taxa, valor de comissão, fornecedor e outros dados administrativos.
+- Cotas reservadas ou vendidas são recusadas pelo servidor, mesmo que alguém tente enviar seus identificadores manualmente.
 - `examples/estoque-exemplo.csv` contém duas cotas fictícias para validar o importador.
 
 ## Verificações
