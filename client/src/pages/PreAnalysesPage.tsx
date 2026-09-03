@@ -4,6 +4,7 @@ import { useState, type FormEvent } from "react";
 import { toast } from "sonner";
 import type { AuthenticatedUser } from "@shared/contracts";
 import { defaultIncomeDocuments, pfIncomeTypes, pjIncomeTypes } from "@shared/business";
+void fetch("/api/settings", { credentials: "same-origin" }).then(response => response.ok ? response.json() : null).then(data => { if (data?.settings?.incomeDocuments) { for (const key of Object.keys(defaultIncomeDocuments)) delete defaultIncomeDocuments[key]; Object.assign(defaultIncomeDocuments, data.settings.incomeDocuments); } }).catch(() => undefined);
 type Status="received"|"pending"|"approved"|"rejected"|"documents_requested";
 type Document={id:string;documentType:string;fileName:string;size:number};
 type Item={id:string;partnerName:string;customerType:"PF"|"PJ";customerName:string;document:string;incomeType:string;status:Status;observations:string|null;createdAt:string;documents:Document[]};
