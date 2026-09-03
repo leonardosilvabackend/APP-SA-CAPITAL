@@ -65,6 +65,6 @@ Trabalhe em branches, teste localmente e abra uma revisão antes de unir altera�
 1. Criar o projeto Supabase exclusivo e configurar PostgreSQL/Storage.
 2. Implementar autenticação e perfis administrador/parceiro.
 3. Implementar estoque e importação de planilhas.
-4. Implementar simulador, cotações e propostas.
+4. Implementar simulador e histórico de cotações.
 5. Implementar pré-análises e documentos.
 6. Configurar testes de integração, preview e produção.

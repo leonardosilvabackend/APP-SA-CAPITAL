@@ -3,9 +3,7 @@ import {
   BarChart3,
   Bell,
   ChevronRight,
-  ClipboardCheck,
   FileSearch,
-  Handshake,
   LayoutDashboard,
   LogOut,
   Menu,
@@ -27,7 +25,6 @@ const navigation = [
   { href: "/", label: "Visão geral", icon: LayoutDashboard },
   { href: "/estoque", label: "Estoque de cotas", icon: PackageSearch },
   { href: "/cotacoes", label: "Cotações", icon: WalletCards },
-  { href: "/propostas", label: "Propostas", icon: Handshake },
   { href: "/pre-analises", label: "Pré-análises", icon: FileSearch },
   { href: "/usuarios", label: "Usuários", icon: Users },
   { href: "/configuracoes", label: "Configurações", icon: Settings },
@@ -36,7 +33,6 @@ const navigation = [
 const pageContent: Record<string, { title: string; description: string; icon: typeof PackageSearch }> = {
   "/estoque": { title: "Estoque de cotas", description: "Consulta, filtros e importação do estoque contemplado.", icon: PackageSearch },
   "/cotacoes": { title: "Cotações", description: "Histórico de cotações salvas e compartilhadas.", icon: WalletCards },
-  "/propostas": { title: "Propostas", description: "Acompanhamento do funil comercial.", icon: Handshake },
   "/pre-analises": { title: "Pré-análises", description: "Documentos e etapas da análise cadastral.", icon: FileSearch },
   "/usuarios": { title: "Usuários", description: "Administradores, parceiros, papéis e acessos.", icon: Users },
   "/configuracoes": { title: "Configurações", description: "Dados da empresa e integrações da plataforma.", icon: Settings },
@@ -93,7 +89,7 @@ function Dashboard({ user }: { user: AuthenticatedUser }) {
 
   const cards = [
     { label: "Cotas disponíveis", value: "—", icon: PackageSearch, tone: "blue" },
-    { label: "Propostas em análise", value: "—", icon: ClipboardCheck, tone: "gold" },
+    { label: "Cotações salvas", value: "—", icon: WalletCards, tone: "gold" },
     { label: "Parceiros ativos", value: "—", icon: Users, tone: "green" },
     { label: "Volume disponível", value: "—", icon: BarChart3, tone: "navy" },
   ];
@@ -156,7 +152,7 @@ function AuthPage({ onAuthenticated }: { onAuthenticated: (user: AuthenticatedUs
   return <div className="auth-page">
     <section className="auth-brand-panel">
       <div className="auth-brand"><div className="brand-mark">SA</div><strong>SA CAPITAL</strong></div>
-      <div><span className="eyebrow">CRÉDITO INTELIGENTE</span><h1>Decisões comerciais com clareza e segurança.</h1><p>Gestão de cotas contempladas, propostas e análises em uma plataforma independente.</p></div>
+      <div><span className="eyebrow">CRÉDITO INTELIGENTE</span><h1>Decisões comerciais com clareza e segurança.</h1><p>Gestão de cotas contempladas, cotações e análises em uma plataforma independente.</p></div>
       <small>Ambiente protegido • SA Capital</small>
     </section>
     <section className="auth-form-panel">
