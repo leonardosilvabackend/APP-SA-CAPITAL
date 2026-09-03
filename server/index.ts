@@ -2,10 +2,12 @@ import express from "express";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { config } from "./config";
+import { authRouter } from "./auth/routes";
 
 const app = express();
 app.disable("x-powered-by");
 app.use(express.json({ limit: "2mb" }));
+app.use("/api/auth", authRouter);
 
 app.get("/api/health", (_req, res) => {
   res.json({
@@ -14,6 +16,11 @@ app.get("/api/health", (_req, res) => {
     timestamp: new Date().toISOString(),
     databaseConfigured: Boolean(config.databaseUrl),
   });
+});
+
+app.use("/api", (error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  console.error("[API] Erro não tratado", error);
+  res.status(500).json({ error: "Erro interno do servidor" });
 });
 
 if (config.isProduction) {
