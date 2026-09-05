@@ -1,5 +1,18 @@
-import { boolean, index, integer, jsonb, numeric, pgEnum, pgTable, text, timestamp, uuid, varchar, type AnyPgColumn } from "drizzle-orm/pg-core";
+import { boolean, index, integer, jsonb, numeric, pgEnum, pgSequence, pgTable, text, timestamp, uuid, varchar, type AnyPgColumn } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
+import type { negotiationStatuses } from "../../shared/negotiations";
 import type { CalculationQuota } from "../../shared/quote";
+import type { AdministratorFile } from "../../shared/administrators";
+
+export const administrators = pgTable("administrators", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  name: varchar("name", { length: 160 }).notNull(),
+  characteristics: text("characteristics").notNull(),
+  website: text("website"),
+  logo: jsonb("logo").$type<AdministratorFile>(),
+  documents: jsonb("documents").$type<AdministratorFile[]>().notNull().default([]),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});
 
 export const userRole = pgEnum("user_role", ["admin", "partner", "administrative", "advisor", "user"]);
 export const userStatus = pgEnum("user_status", ["active", "inactive"]);
@@ -65,6 +78,52 @@ export const reservationRequests = pgTable("reservation_requests", {
   reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 }, table => [index("reservation_quote_idx").on(table.quoteId), index("reservation_status_idx").on(table.status)]);
+
+export const negotiationCodeSequence = pgSequence("negotiation_code_seq", { startWith: 5092026 });
+export const negotiations = pgTable("negotiations", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  code: varchar("code", { length: 40 }).notNull().unique().default(sql`'SA' || lpad(nextval('negotiation_code_seq')::text, 8, '0')`),
+  // Keep source identifiers and snapshots after the expiring quote is deleted.
+  reservationId: uuid("reservation_id").notNull().unique(),
+  quoteId: uuid("quote_id").notNull(),
+  ownerId: uuid("owner_id").references(() => users.id).notNull(),
+  clientName: varchar("client_name", { length: 180 }).notNull(),
+  selectedQuotas: jsonb("selected_quotas").$type<CalculationQuota[]>().notNull(),
+  status: varchar("status", { length: 40 }).$type<typeof negotiationStatuses[number]>().notNull().default("awaiting_data"),
+  entryAmount: numeric("entry_amount", { precision: 14, scale: 2 }).notNull(),
+  transferFee: numeric("transfer_fee", { precision: 14, scale: 2 }).notNull(),
+  registrationFee: numeric("registration_fee", { precision: 14, scale: 2 }).notNull().default("0"),
+  commissionAmount: numeric("commission_amount", { precision: 14, scale: 2 }).notNull(),
+  creditAmount: numeric("credit_amount", { precision: 14, scale: 2 }).notNull(),
+  insuranceAmount: numeric("insurance_amount", { precision: 14, scale: 2 }).notNull(),
+  outstandingBalance: numeric("outstanding_balance", { precision: 14, scale: 2 }).notNull(),
+  version: integer("version").notNull().default(0),
+  updatedBy: uuid("updated_by").references(() => users.id),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, table => [index("negotiations_owner_idx").on(table.ownerId), index("negotiations_status_idx").on(table.status)]);
+
+export const negotiationPayments = pgTable("negotiation_payments", {
+  id: uuid("id").primaryKey(),
+  negotiationId: uuid("negotiation_id").references(() => negotiations.id, { onDelete: "cascade" }).notNull(),
+  kind: varchar("kind", { length: 20 }).$type<"signal" | "payment">().notNull(),
+  amount: numeric("amount", { precision: 14, scale: 2 }).notNull(),
+  paidAt: timestamp("paid_at", { withTimezone: true }).notNull(),
+  recordedBy: uuid("recorded_by").references(() => users.id).notNull(),
+  updatedBy: uuid("updated_by").references(() => users.id).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, table => [index("negotiation_payments_negotiation_idx").on(table.negotiationId)]);
+
+export const negotiationReceipts = pgTable("negotiation_receipts", {
+  id: uuid("id").primaryKey(),
+  paymentId: uuid("payment_id").references(() => negotiationPayments.id, { onDelete: "cascade" }).notNull(),
+  fileName: varchar("file_name", { length: 255 }).notNull(),
+  storagePath: text("storage_path").notNull(),
+  mimeType: varchar("mime_type", { length: 100 }).notNull(),
+  uploadedBy: uuid("uploaded_by").references(() => users.id).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, table => [index("negotiation_receipts_payment_idx").on(table.paymentId)]);
 
 export const preAnalyses = pgTable("pre_analyses", {
   id: uuid("id").defaultRandom().primaryKey(),

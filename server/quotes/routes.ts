@@ -6,6 +6,8 @@ import { getCurrentUser } from "../auth/current-user";
 import { getDatabase } from "../db/client";
 import { quotas, reservationRequests, savedQuotes, users } from "../db/schema";
 
+import { NegotiationError, reviewReservation } from "../negotiations/service";
+
 export const quotesRouter = Router();
 function asyncRoute(handler: (req: Request, res: Response, next: NextFunction) => Promise<unknown>): RequestHandler { return (req, res, next) => { void handler(req, res, next).catch(next); }; }
 export async function cleanupExpiredQuotes() { const db = getDatabase(); if (db) await db.delete(savedQuotes).where(lt(savedQuotes.expiresAt, new Date())); }
@@ -22,5 +24,27 @@ quotesRouter.get("/saved",asyncRoute(async(req,res)=>{const user=await current(r
 quotesRouter.get("/saved/:id",asyncRoute(async(req,res)=>{const user=await current(req,res);if(!user)return;await cleanup();const db=getDatabase()!;const scope=quoteScope(user);const condition=scope?and(eq(savedQuotes.id,req.params.id),scope):eq(savedQuotes.id,req.params.id);const [row]=await db.select({id:savedQuotes.id,clientName:savedQuotes.clientName,creatorId:savedQuotes.creatorId,creatorName:users.name,selectedQuotas:savedQuotes.selectedQuotas,commissionRate:savedQuotes.commissionRate,createdAt:savedQuotes.createdAt,expiresAt:savedQuotes.expiresAt}).from(savedQuotes).innerJoin(users,eq(savedQuotes.creatorId,users.id)).where(condition).limit(1);if(!row)return res.status(404).json({error:"Cotação não encontrada"});const [reservation]=await db.select().from(reservationRequests).where(eq(reservationRequests.quoteId,row.id)).limit(1);const rate=Number(row.commissionRate);return res.json({item:{...row,quotas:row.selectedQuotas,summary:calculateQuote(row.selectedQuotas,rate),commercialText:commercialQuoteText(row.selectedQuotas,rate),reservation:reservation??null}});}));
 quotesRouter.patch("/saved/:id",asyncRoute(async(req,res)=>{const user=await current(req,res);if(!user)return;const parsed=saveSchema.partial().safeParse(req.body);if(!parsed.success)return res.status(400).json({error:parsed.error.issues[0]?.message});const db=getDatabase()!;const scope=quoteScope(user);const condition=scope?and(eq(savedQuotes.id,req.params.id),scope):eq(savedQuotes.id,req.params.id);const values:any={};if(parsed.data.clientName)values.clientName=parsed.data.clientName;if(parsed.data.commissionRate!==undefined)values.commissionRate=String(parsed.data.commissionRate);if(parsed.data.quotaIds){try{const items=await loadAvailableQuotas(parsed.data.quotaIds);if(!items)return res.status(400).json({error:"Cota indisponível"});values.selectedQuotas=items;}catch(error){return res.status(400).json({error:(error as Error).message});}}const [item]=await db.update(savedQuotes).set(values).where(condition).returning();if(!item)return res.status(404).json({error:"Cotação não encontrada"});return res.json({item});}));
 quotesRouter.delete("/saved/:id",asyncRoute(async(req,res)=>{const user=await current(req,res);if(!user)return;const db=getDatabase()!;const scope=quoteScope(user);const condition=scope?and(eq(savedQuotes.id,req.params.id),scope):eq(savedQuotes.id,req.params.id);const [item]=await db.delete(savedQuotes).where(condition).returning({id:savedQuotes.id});if(!item)return res.status(404).json({error:"Cotação não encontrada"});return res.status(204).end();}));
-quotesRouter.post("/saved/:id/reserve",asyncRoute(async(req,res)=>{const user=await current(req,res);if(!user)return;const db=getDatabase()!;const scope=quoteScope(user);const condition=scope?and(eq(savedQuotes.id,req.params.id),scope):eq(savedQuotes.id,req.params.id);const [quote]=await db.select({id:savedQuotes.id}).from(savedQuotes).innerJoin(users,eq(savedQuotes.creatorId,users.id)).where(condition).limit(1);if(!quote)return res.status(404).json({error:"Cotação não encontrada"});const [item]=await db.insert(reservationRequests).values({quoteId:quote.id,requesterId:user.id}).onConflictDoNothing().returning();return res.status(201).json({item});}));
-quotesRouter.patch("/reservations/:id",asyncRoute(async(req,res)=>{const user=await getCurrentUser(req);if(!user||user.role!=="admin")return res.status(403).json({error:"Apenas o administrador aprova reservas"});const parsed=z.object({status:z.enum(["approved","rejected"])}).safeParse(req.body);if(!parsed.success)return res.status(400).json({error:"Status inválido"});const db=getDatabase()!;const [reservation]=await db.select().from(reservationRequests).where(eq(reservationRequests.id,req.params.id)).limit(1);if(!reservation)return res.status(404).json({error:"Pedido não encontrado"});if(parsed.data.status==="approved"){const [quote]=await db.select().from(savedQuotes).where(eq(savedQuotes.id,reservation.quoteId)).limit(1);if(!quote)return res.status(404).json({error:"Cotação expirada"});await db.update(quotas).set({status:"reserved",updatedAt:new Date()}).where(inArray(quotas.id,quote.selectedQuotas.map(q=>q.id)));}const [item]=await db.update(reservationRequests).set({status:parsed.data.status,reviewedBy:user.id,reviewedAt:new Date()}).where(eq(reservationRequests.id,reservation.id)).returning();return res.json({item});}));
+quotesRouter.post("/saved/:id/reserve", asyncRoute(async (req, res) => {
+  const user = await current(req, res); if (!user) return;
+  const db = getDatabase()!;
+  const result = await db.transaction(async tx => {
+    const scope = quoteScope(user);
+    const [quote] = await tx.select({ item: savedQuotes }).from(savedQuotes).innerJoin(users, eq(savedQuotes.creatorId, users.id))
+      .where(and(eq(savedQuotes.id, req.params.id), scope)).for("update", { of: savedQuotes });
+    if (!quote) return { status: 404, body: { error: "Cotacao nao encontrada" } };
+    if (quote.item.expiresAt <= new Date()) return { status: 409, body: { error: "A cotacao expirou" } };
+    const [existing] = await tx.select().from(reservationRequests).where(eq(reservationRequests.quoteId, quote.item.id)).orderBy(desc(reservationRequests.createdAt));
+    if (existing && existing.status !== "rejected") return { status: 200, body: { item: existing } };
+    const [item] = await tx.insert(reservationRequests).values({ quoteId: quote.item.id, requesterId: user.id }).returning();
+    return { status: 201, body: { item } };
+  });
+  return res.status(result.status).json(result.body);
+}));
+quotesRouter.patch("/reservations/:id", asyncRoute(async (req, res) => {
+  const user = await getCurrentUser(req);
+  if (!user || user.role !== "admin") return res.status(403).json({ error: "Apenas o administrador aprova reservas" });
+  const parsed = z.object({ status: z.enum(["approved", "rejected"]) }).safeParse(req.body);
+  if (!parsed.success || !z.string().uuid().safeParse(req.params.id).success) return res.status(400).json({ error: "Dados invalidos" });
+  try { return res.json(await reviewReservation(req.params.id, parsed.data.status, user.id)); }
+  catch (error) { if (error instanceof NegotiationError) return res.status(error.status).json({ error: error.message }); throw error; }
+}));

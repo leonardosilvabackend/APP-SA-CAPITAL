@@ -78,3 +78,26 @@ Trabalhe em branches, teste localmente e abra uma revisão antes de unir altera�
 - Configurações comerciais ficam disponíveis ao administrador; segredos continuam somente nas variáveis de ambiente.
 5. Implementar pré-análises e documentos.
 6. Configurar testes de integração, preview e produção.
+
+## Administradoras
+
+- Cadastros persistidos no PostgreSQL; execute `pnpm db:migrate` antes de usar o modulo.
+- Somente administradores cadastram; usuarios autenticados consultam os registros e arquivos.
+- Logos e documentos usam o bucket privado `SUPABASE_STORAGE_BUCKET`, com `SUPABASE_URL` e `SUPABASE_SERVICE_ROLE_KEY` configurados no servidor.
+- Sem Storage configurado, o cadastro continua disponivel sem anexos.
+- Ate 10 documentos por cadastro; soma dos arquivos, incluindo a logo, limitada a 10 MB.
+- Os arquivos sao acessados por links temporarios apos verificacao da sessao. Se a gravacao falhar, os arquivos enviados sao removidos.
+- Os exemplos fixos da interface foram removidos. Cadastros antigos mantidos apenas na memoria do navegador nao podem ser recuperados apos recarregar.
+
+## Negociações
+
+- A aprovação de uma reserva cria a negociação e reserva as cotas na mesma transação. A aprovação repetida não duplica a negociação; cotas indisponíveis impedem a aprovação.
+- Códigos sequenciais a partir de `SA05092026`. Cada negociação reúne as cotas da cotação aprovada, preservando valores, parcelas e seguro mesmo após a cotação expirar.
+- Usuários consultam as próprias negociações; assessores consultam e alteram as próprias e as de sua equipe; administrador e administrativo consultam e alteram todas.
+- Etapas: aguardando dados, pendente contrato, aguardando pré-análise, finalizada e cancelada. A mudança de etapa não altera automaticamente o estoque nem cria uma pré-análise.
+- Entrada inicial e taxa de transferência vêm da cotação; taxa de cadastro inicia em zero. Comissão é editada em reais e não altera automaticamente a entrada.
+- Sinais e demais pagamentos têm valor, data e horário, autor do registro e comprovantes privados em PDF, JPEG ou PNG de até 10 MB cada. Não há limite de quantidade de pagamentos.
+- Valor a pagar = entrada menos todos os pagamentos. Pagamentos não podem superar a entrada; a finalização exige entrada quitada. Reabra a etapa para corrigir pagamentos de negociações encerradas.
+- A API detecta alterações simultâneas e evita duplicação ao reenviar um pagamento. Comprovantes podem ser anexados também depois do registro do pagamento.
+- Execute `pnpm db:migrate` e reinicie o servidor. Reservas anteriormente aprovadas que ainda possuem a cotação são importadas antes da limpeza inicial.
+- Testes com PostgreSQL: defina `RUN_NEGOTIATION_DB_TESTS=1` e execute `pnpm test`. Usam um schema temporário, removido ao final, e simulam o Storage, sem alterar registros da aplicação.

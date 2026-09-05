@@ -9,9 +9,14 @@ import { cleanupExpiredQuotes, quotesRouter } from "./quotes/routes";
 import { dashboardRouter } from "./dashboard/routes";
 import { cleanupExpiredDocuments, preAnalysesRouter } from "./pre-analyses/routes";
 import { settingsRouter } from "./settings/routes";
+import { administratorsRouter } from "./administrators/routes";
+import { negotiationsRouter } from "./negotiations/routes";
+import { backfillNegotiations } from "./negotiations/service";
 
 const app = express();
 app.disable("x-powered-by");
+app.use("/api/administrators", administratorsRouter);
+app.use("/api/negotiations", negotiationsRouter);
 app.use(express.json({ limit: "2mb" }));
 app.use("/api/auth", authRouter);
 app.use("/api/users", usersRouter);
@@ -50,5 +55,5 @@ app.listen(config.port, "0.0.0.0", () => {
 });
 
 const maintenance = () => Promise.all([cleanupExpiredQuotes(), cleanupExpiredDocuments()]).catch(error => console.error("[Manutenção] Falha na limpeza automática", error));
-void maintenance();
+void backfillNegotiations().then(maintenance).catch(error => console.error("[Negociações] Falha ao importar reservas anteriores", error));
 setInterval(() => void maintenance(), 60 * 60 * 1000).unref();

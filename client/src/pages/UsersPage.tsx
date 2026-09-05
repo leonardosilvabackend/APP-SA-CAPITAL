@@ -1,8 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Plus, ShieldCheck, UserCheck, UserX, Users } from "lucide-react";
+import { Plus, ShieldCheck, UserCheck, UserX, Users, X } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { toast } from "sonner";
 import type { AuthenticatedUser } from "@shared/contracts";
+import { selectionSurface } from "../lib/selectionSurface";
 
 type UserRecord = AuthenticatedUser & {
   phone: string | null;
@@ -25,6 +26,7 @@ async function userApi(path = "", options?: RequestInit) {
 export default function UsersPage({ currentUser }: { currentUser: AuthenticatedUser }) {
   const queryClient = useQueryClient();
   const [showForm, setShowForm] = useState(false);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [form, setForm] = useState({ name: "", email: "", phone: "", password: "", role: currentUser.role === "advisor" ? "user" : "user", managerId: currentUser.role === "advisor" ? currentUser.id : "" });
   const usersQuery = useQuery<UserRecord[]>({
     queryKey: ["users"],
@@ -54,6 +56,7 @@ export default function UsersPage({ currentUser }: { currentUser: AuthenticatedU
   }
 
   const records = usersQuery.data ?? [];
+  const selected = records.find(user => user.id === selectedId);
   return <section className="users-page">
     <div className="page-heading-row">
       <div><span className="eyebrow">ADMINISTRAÇÃO</span><h1>Usuários</h1><p>Cadastre usuários e controle os acessos à plataforma.</p></div>
@@ -86,7 +89,7 @@ export default function UsersPage({ currentUser }: { currentUser: AuthenticatedU
         <thead><tr><th>Usuário</th><th>Perfil</th><th>Situação</th><th>Cadastrado em</th></tr></thead>
         <tbody>{records.map(user => {
           const isSelf = user.id === currentUser.id;
-          return <tr key={user.id}>
+          return <tr key={user.id} {...selectionSurface(() => setSelectedId(user.id))} aria-label={`Consultar usuário ${user.name}`}>
             <td><div className="user-cell"><span className="table-avatar">{user.name.split(/\s+/).slice(0, 2).map(part => part[0]).join("").toUpperCase()}</span><span><strong>{user.name}{isSelf ? " (você)" : ""}</strong><small>{user.email}{user.phone ? ` • ${user.phone}` : ""}</small></span></div></td>
             <td><select aria-label={`Perfil de ${user.name}`} disabled={currentUser.role !== "admin" || isSelf || updateUser.isPending} value={user.role} onChange={event => updateUser.mutate({ id: user.id, changes: { role: event.target.value } })}><option value="user">Usuário</option><option value="advisor">Assessor</option><option value="administrative">Administrativo</option><option value="admin">Administrador</option></select></td>
             <td><button className={`status-button ${user.status}`} disabled={currentUser.role !== "admin" || isSelf || updateUser.isPending} onClick={() => updateUser.mutate({ id: user.id, changes: { status: user.status === "active" ? "inactive" : "active" } })}>{user.status === "active" ? <UserCheck size={15} /> : <UserX size={15} />}{user.status === "active" ? "Ativo" : "Inativo"}</button></td>
@@ -96,5 +99,9 @@ export default function UsersPage({ currentUser }: { currentUser: AuthenticatedU
       </table>}
       {!usersQuery.isLoading && records.length === 0 && <div className="table-message"><ShieldCheck size={26} /> Nenhum usuário encontrado.</div>}
     </div>
+    {selected && <div className="modal-backdrop"><section className="stock-modal" role="dialog" aria-modal="true" aria-labelledby="selected-user-title">
+      <div className="modal-heading"><div><span className="eyebrow">DADOS DO USUÁRIO</span><h2 id="selected-user-title">{selected.name}</h2></div><button type="button" className="icon-button" aria-label="Fechar dados do usuário" onClick={() => setSelectedId(null)}><X size={19} /></button></div>
+      <dl className="selected-user-details"><div><dt>E-mail</dt><dd>{selected.email}</dd></div><div><dt>Telefone</dt><dd>{selected.phone || "Não informado"}</dd></div><div><dt>Perfil</dt><dd>{{ user: "Usuário", advisor: "Assessor", admin: "Administrador", administrative: "Administrativo" }[selected.role]}</dd></div><div><dt>Situação</dt><dd>{selected.status === "active" ? "Ativo" : "Inativo"}</dd></div><div><dt>Assessor responsável</dt><dd>{records.find(user => user.id === selected.managerId)?.name ?? "Não informado"}</dd></div><div><dt>Cadastrado em</dt><dd>{new Date(selected.createdAt).toLocaleString("pt-BR")}</dd></div></dl>
+    </section></div>}
   </section>;
 }
