@@ -22,19 +22,24 @@ administratorsRouter.use(asyncRoute(async (req, res, next) => {
   if (!getDatabase()) return res.status(503).json({ error: "Banco não configurado" });
   const user = await getCurrentUser(req);
   if (!user) return res.status(401).json({ error: "Faça login" });
-  if (req.method !== "GET" && user.role !== "admin") return res.status(403).json({ error: "Somente o administrador pode cadastrar administradoras" });
+  if (req.method !== "GET" && user.role !== "admin") return res.status(403).json({ error: "Somente o administrador pode cadastrar ou editar administradoras" });
   next();
 }));
 administratorsRouter.get("/", asyncRoute(async (_req, res) => {
   const items = await getDatabase()!.select().from(administrators).orderBy(asc(administrators.name));
   return res.json({ items: items.map(serialize) });
 }));
-administratorsRouter.post("/", express.json({ limit: "15mb" }), asyncRoute(async (req, res) => {
+const saveAdministrator = asyncRoute(async (req, res) => {
+  const editing = req.method === "PUT";
+  if (editing && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(req.params.id)) return res.status(400).json({ error: "Identificador inválido" });
+  const existing = editing ? (await getDatabase()!.select().from(administrators).where(eq(administrators.id, req.params.id)).limit(1))[0] : undefined;
+  if (editing && !existing) return res.status(404).json({ error: "Administradora não encontrada" });
   const parsed = administratorInputSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0]?.message });
   const { logo, documents, ...fields } = parsed.data;
   if ((logo || documents.length) && (!config.supabaseUrl || !config.supabaseServiceRoleKey)) return res.status(503).json({ error: "Armazenamento de arquivos não configurado" });
-  const id = crypto.randomUUID();
+  if ((existing?.documents.length ?? 0) + documents.length > 10) return res.status(400).json({ error: "A administradora pode ter até 10 documentos" });
+  const id = existing?.id ?? crypto.randomUUID();
   const uploaded: string[] = [];
   async function upload(file: (typeof documents)[number]): Promise<AdministratorFile> {
     const fileId = crypto.randomUUID();
@@ -45,16 +50,22 @@ administratorsRouter.post("/", express.json({ limit: "15mb" }), asyncRoute(async
     return { id: fileId, name: file.name, mimeType: file.mimeType, storagePath };
   }
   try {
-    const savedLogo = logo ? await upload(logo) : null;
-    const savedDocuments: AdministratorFile[] = [];
+    const savedLogo = logo ? await upload(logo) : existing?.logo ?? null;
+    const savedDocuments: AdministratorFile[] = [...(existing?.documents ?? [])];
     for (const file of documents) savedDocuments.push(await upload(file));
-    const [item] = await getDatabase()!.insert(administrators).values({ id, ...fields, website: fields.website || null, logo: savedLogo, documents: savedDocuments }).returning();
-    return res.status(201).json({ item: serialize(item) });
+    const values = { ...fields, website: fields.website || null, logo: savedLogo, documents: savedDocuments };
+    const [item] = existing
+      ? await getDatabase()!.update(administrators).set(values).where(eq(administrators.id, id)).returning()
+      : await getDatabase()!.insert(administrators).values({ id, ...values }).returning();
+    if (logo && existing?.logo) await storage().remove([existing.logo.storagePath]).catch(() => undefined);
+    return res.status(existing ? 200 : 201).json({ item: serialize(item) });
   } catch (error) {
     if (uploaded.length) await storage().remove(uploaded).catch(() => undefined);
     throw error;
   }
-}));
+});
+administratorsRouter.post("/", express.json({ limit: "15mb" }), saveAdministrator);
+administratorsRouter.put("/:id", express.json({ limit: "15mb" }), saveAdministrator);
 administratorsRouter.get("/:id/files/:fileId", asyncRoute(async (req, res) => {
   if (!/^[0-9a-f-]{36}$/i.test(req.params.id)) return res.status(400).json({ error: "Identificador inválido" });
   const [item] = await getDatabase()!.select().from(administrators).where(eq(administrators.id, req.params.id)).limit(1);

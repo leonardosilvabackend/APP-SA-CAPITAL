@@ -14,7 +14,8 @@
     "test": "vitest run",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
-    "db:studio": "drizzle-kit studio"
+    "db:studio": "drizzle-kit studio",
+    "db:import-administrators": "tsx server/administrators/import-catalog.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",

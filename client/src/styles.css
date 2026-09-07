@@ -735,9 +735,21 @@ main { max-width: 1560px; padding: 42px 46px 72px; }
 
 .administrator-card-header {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
 
   gap: 14px;
+}
+
+.administrator-card-name {
+  flex: 1;
+  min-width: 100px;
+  overflow-wrap: anywhere;
+}
+
+.administrator-edit-button {
+  flex: none;
+  margin-left: auto;
 }
 
 .administrator-logo {
@@ -789,6 +801,7 @@ main { max-width: 1560px; padding: 42px 46px 72px; }
 
 .administrator-description {
   margin: 20px 0;
+  white-space: pre-line;
 
   color: #68768b;
 
@@ -799,6 +812,7 @@ main { max-width: 1560px; padding: 42px 46px 72px; }
 
 .administrator-card-footer {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
 
   gap: 15px;

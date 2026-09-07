@@ -6,7 +6,8 @@ import { administratorInputSchema } from "../../shared/administrators";
 const state = vi.hoisted(() => ({ user: null as null | { role: string }, rows: [] as any[], insert: vi.fn() }));
 vi.mock("../auth/current-user", () => ({ getCurrentUser: async () => state.user }));
 vi.mock("../db/client", () => ({ getDatabase: () => ({
-  select: () => ({ from: () => ({ orderBy: async () => state.rows }) }),
+  select: () => ({ from: () => ({ orderBy: async () => state.rows, where: () => ({ limit: async () => state.rows }) }) }),
+  update: () => ({ set: (data: any) => ({ where: () => ({ returning: async () => { Object.assign(state.rows[0], data); return [state.rows[0]]; } }) }) }),
   insert: () => ({ values: (data: any) => ({ returning: async () => { state.insert(data); state.rows.push(data); return [data]; } }) }),
 }) }));
 import { administratorsRouter } from "./routes";
@@ -48,5 +49,32 @@ describe("administrators API", () => {
     for (const documents of [[{ ...file, mimeType: "text/html" }], [{ ...file, base64: "not base64" }], Array.from({ length: 11 }, () => file), [{ ...file, base64: "AAAA".repeat(2 * 1024 * 1024) }, { ...file, base64: "AAAA".repeat(2 * 1024 * 1024) }]]) {
       expect(administratorInputSchema.safeParse({ ...valid, documents }).success).toBe(false);
     }
+  });
+});
+
+const edit = (id: string, body: unknown) => fetch(`${base}/${id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+describe("administrator editing", () => {
+  it("updates the existing record and preserves attachments", async () => {
+    const { item } = await (await create(valid)).json();
+    const logo = { id: "logo", name: "logo.png", storagePath: "private/logo", mimeType: "image/png" };
+    const document = { id: "doc", name: "rules.pdf", storagePath: "private/doc", mimeType: "application/pdf" };
+    Object.assign(state.rows[0], { logo, documents: [document] });
+    const response = await edit(item.id, { ...valid, name: "Updated", website: "", characteristics: "New rules" });
+    expect(response.status).toBe(200);
+    expect(state.rows).toHaveLength(1);
+    expect(state.rows[0]).toMatchObject({ id: item.id, name: "Updated", website: null, logo, documents: [document] });
+    expect((await response.json()).item.documents).toHaveLength(1);
+  });
+  it("rejects unauthorized edits and invalid input", async () => {
+    const { item } = await (await create(valid)).json();
+    state.user = null;
+    expect((await edit(item.id, valid)).status).toBe(401);
+    state.user = { role: "partner" };
+    expect((await edit(item.id, valid)).status).toBe(403);
+    state.user = { role: "admin" };
+    expect((await edit(item.id, { ...valid, website: "javascript:alert(1)" })).status).toBe(400);
+    expect((await edit("bad-id", valid)).status).toBe(400);
+    state.rows = [];
+    expect((await edit(item.id, valid)).status).toBe(404);
   });
 });

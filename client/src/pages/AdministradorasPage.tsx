@@ -4,6 +4,7 @@ import {
   ExternalLink,
   FileText,
   Plus,
+  Pencil,
   Search,
   Upload,
   X,
@@ -15,8 +16,8 @@ import { selectionSurface } from "../lib/selectionSurface";
 import { administratorInputSchema, documentTypes, imageTypes, maxAttachmentBytes, type Administrator, type AdministratorInput } from "@shared/administrators";
 
 type AdministradorasPageProps = { isAdmin: boolean };
-async function request(options?: RequestInit) {
-  const response = await fetch("/api/administrators", { credentials: "same-origin", ...options, headers: { "Content-Type": "application/json" } });
+async function request(options?: RequestInit, id?: string) {
+  const response = await fetch(`/api/administrators${id ? `/${id}` : ""}`, { credentials: "same-origin", ...options, headers: { "Content-Type": "application/json" } });
   const data = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(data.error ?? "Não foi possível concluir a operação");
   return data;
@@ -37,6 +38,7 @@ export function AdministradorasPage({
   const queryClient = useQueryClient();
   const list = useQuery<{ items: Administrator[] }>({ queryKey: ["administrators"], queryFn: () => request() });
   const administrators = list.data?.items ?? [];
+  const [editing, setEditing] = useState<Administrator | null>(null);
   const [sending, setSending] = useState(false);
   const [logoFile, setLogoFile] = useState<File>();
   const [documents, setDocuments] = useState<File[]>([]);
@@ -61,7 +63,18 @@ export function AdministradorasPage({
     );
   }, [administrators, search]);
 
+  function startEdit(item: Administrator) {
+    resetForm();
+    setSelected(null);
+    setEditing(item);
+    setName(item.name);
+    setCharacteristics(item.characteristics);
+    setWebsite(item.website ?? "");
+    setModalOpen(true);
+  }
+
   function resetForm() {
+    setEditing(null);
     setName("");
     setCharacteristics("");
     setWebsite("");
@@ -105,8 +118,8 @@ export function AdministradorasPage({
     try {
       const input = administratorInputSchema.safeParse({ name, characteristics, website, logo: logoFile ? await readFile(logoFile) : undefined, documents: await Promise.all(documents.map(readFile)) });
       if (!input.success) throw new Error(input.error.issues[0]?.message);
-      const data: { item: Administrator } = await request({ method: "POST", body: JSON.stringify(input.data) });
-      queryClient.setQueryData<{ items: Administrator[] }>(["administrators"], current => ({ items: [...(current?.items ?? []), data.item].sort((a, b) => a.name.localeCompare(b.name)) }));
+      const data: { item: Administrator } = await request({ method: editing ? "PUT" : "POST", body: JSON.stringify(input.data) }, editing?.id);
+      queryClient.setQueryData<{ items: Administrator[] }>(["administrators"], current => ({ items: [...(current?.items ?? []).filter(item => item.id !== data.item.id), data.item].sort((a, b) => a.name.localeCompare(b.name)) }));
       void queryClient.invalidateQueries({ queryKey: ["administrators"] });
       toast.success("Administradora salva com sucesso");
       setModalOpen(false);
@@ -137,7 +150,7 @@ export function AdministradorasPage({
         {isAdmin && (
           <button
             className="primary-button"
-            onClick={() => setModalOpen(true)}
+            onClick={() => { resetForm(); setModalOpen(true); }}
           >
             <Plus size={17} />
             Adicionar administradora
@@ -197,10 +210,21 @@ export function AdministradorasPage({
                   )}
                 </div>
 
-                <div>
+                <div className="administrator-card-name">
                   <span>ADMINISTRADORA</span>
                   <h2>{administrator.name}</h2>
                 </div>
+                {isAdmin && (
+                  <button
+                    type="button"
+                    className="secondary-button administrator-edit-button"
+                    onClick={() => startEdit(administrator)}
+                    aria-label={`Editar ${administrator.name}`}
+                  >
+                    <Pencil size={16} />
+                    Editar
+                  </button>
+                )}
               </div>
 
               <p className="administrator-description">
@@ -235,17 +259,18 @@ export function AdministradorasPage({
       {selected && <div className="modal-backdrop"><div className="administrator-modal" role="dialog" aria-modal="true" aria-label="Documentos da administradora">
         <div className="modal-heading"><h2>Documentos — {selected.name}</h2><button className="icon-button" aria-label="Fechar documentos" onClick={() => setSelected(null)}><X size={18}/></button></div>
         {selected.documents.length ? <ul>{selected.documents.map(doc => <li key={doc.id}><a href={doc.url} target="_blank" rel="noreferrer">{doc.name}</a></li>)}</ul> : <p>Nenhum documento cadastrado.</p>}
+        {isAdmin && <div className="form-actions"><button type="button" className="primary-button" onClick={() => startEdit(selected)}><Pencil size={16} />Editar administradora</button></div>}
       </div></div>}
       {modalOpen && isAdmin && (
         <div className="modal-backdrop">
-          <div className="administrator-modal">
+          <div className="administrator-modal" role="dialog" aria-modal="true" aria-label={editing ? "Editar administradora" : "Adicionar administradora"}>
             <div className="modal-heading">
               <div>
                 <span className="eyebrow">
-                  NOVA ADMINISTRADORA
+                  {editing ? "EDITAR ADMINISTRADORA" : "NOVA ADMINISTRADORA"}
                 </span>
 
-                <h2>Adicionar administradora</h2>
+                <h2>{editing ? "Editar administradora" : "Adicionar administradora"}</h2>
               </div>
 
               <button
@@ -266,9 +291,9 @@ export function AdministradorasPage({
                 Logo
 
                 <div className="administrator-logo-upload">
-                  {logoPreview ? (
+                  {(logoPreview || editing?.logo) ? (
                     <img
-                      src={logoPreview}
+                      src={logoPreview || editing?.logo}
                       alt="Pré-visualização"
                     />
                   ) : (
@@ -364,6 +389,7 @@ export function AdministradorasPage({
                 </div>
               </label>
 
+              {editing && editing.documents.length > 0 && <div><p>Documentos já cadastrados (serão mantidos):</p><ul>{editing.documents.map(doc => <li key={doc.id}><a href={doc.url} target="_blank" rel="noreferrer">{doc.name}</a></li>)}</ul></div>}
               {documents.length > 0 && <ul>{documents.map((file, index) => <li key={index}>{file.name}</li>)}</ul>}
               <div className="form-actions">
                 <button
