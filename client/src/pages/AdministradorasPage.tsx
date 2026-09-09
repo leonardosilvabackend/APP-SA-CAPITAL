@@ -1,3 +1,4 @@
+import { dismissBackdrop } from "../lib/dismissBackdrop";
 import { useEffect, useMemo, useState } from "react";
 import {
   Building2,
@@ -256,13 +257,13 @@ export function AdministradorasPage({
         </div>
       )}
 
-      {selected && <div className="modal-backdrop"><div className="administrator-modal" role="dialog" aria-modal="true" aria-label="Documentos da administradora">
+      {selected && <div className="modal-backdrop" {...dismissBackdrop(() => setSelected(null))}><div className="administrator-modal" role="dialog" aria-modal="true" aria-label="Documentos da administradora">
         <div className="modal-heading"><h2>Documentos — {selected.name}</h2><button className="icon-button" aria-label="Fechar documentos" onClick={() => setSelected(null)}><X size={18}/></button></div>
         {selected.documents.length ? <ul>{selected.documents.map(doc => <li key={doc.id}><a href={doc.url} target="_blank" rel="noreferrer">{doc.name}</a></li>)}</ul> : <p>Nenhum documento cadastrado.</p>}
         {isAdmin && <div className="form-actions"><button type="button" className="primary-button" onClick={() => startEdit(selected)}><Pencil size={16} />Editar administradora</button></div>}
       </div></div>}
       {modalOpen && isAdmin && (
-        <div className="modal-backdrop">
+        <div className="modal-backdrop" {...dismissBackdrop(closeModal, sending)}>
           <div className="administrator-modal" role="dialog" aria-modal="true" aria-label={editing ? "Editar administradora" : "Adicionar administradora"}>
             <div className="modal-heading">
               <div>

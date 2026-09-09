@@ -61,6 +61,7 @@ export const createUserInputSchema = setupAdminInputSchema.extend({
 });
 
 export const updateUserInputSchema = z.object({
+  email: loginInputSchema.shape.email.optional(),
   name: z.string().trim().min(3).max(160).optional(),
   phone: z.string().trim().max(32).nullable().optional(),
   role: userRoleSchema.optional(),

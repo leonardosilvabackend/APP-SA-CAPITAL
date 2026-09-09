@@ -1,3 +1,4 @@
+import { dismissBackdrop } from "../lib/dismissBackdrop";
 import { useIsMutating, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronRight, FileText, Handshake, Plus, Search, X } from "lucide-react";
 import { useState, type FormEvent } from "react";
@@ -207,6 +208,6 @@ export default function NegotiationsPage({ user }: { user: AuthenticatedUser }) 
         <tbody>{items.map(item => <NegotiationRow key={item.id} item={item} onOpen={() => setSelected(item.id)} />)}</tbody>
       </table></div>
     </section>}
-    {selected && <div className="modal-backdrop"><div className="negotiation-modal" role="dialog" aria-modal="true" aria-labelledby="negotiation-title"><div className="modal-heading"><div><span className="eyebrow">DETALHES DA NEGOCIAÇÃO</span><h2 id="negotiation-title">{detail.data?.item.code ?? "Carregando…"}</h2></div><button className="icon-button" aria-label="Fechar negociação" disabled={saving} onClick={() => setSelected(null)}><X size={20} /></button></div>{detail.isLoading && <p role="status">Carregando dados…</p>}{detail.error && <p className="auth-error" role="alert">{detail.error.message} <button className="secondary-button" onClick={() => void detail.refetch()}>Tentar novamente</button></p>}{detail.data && <NegotiationContent key={detail.data.item.id} item={detail.data.item} editable={canEditNegotiation(user.role)} onSaved={refreshed} />}</div></div>}
+    {selected && <div className="modal-backdrop" {...dismissBackdrop(() => setSelected(null), saving)}><div className="negotiation-modal" role="dialog" aria-modal="true" aria-labelledby="negotiation-title"><div className="modal-heading"><div><span className="eyebrow">DETALHES DA NEGOCIAÇÃO</span><h2 id="negotiation-title">{detail.data?.item.code ?? "Carregando…"}</h2></div><button className="icon-button" aria-label="Fechar negociação" disabled={saving} onClick={() => setSelected(null)}><X size={20} /></button></div>{detail.isLoading && <p role="status">Carregando dados…</p>}{detail.error && <p className="auth-error" role="alert">{detail.error.message} <button className="secondary-button" onClick={() => void detail.refetch()}>Tentar novamente</button></p>}{detail.data && <NegotiationContent key={detail.data.item.id} item={detail.data.item} editable={canEditNegotiation(user.role)} onSaved={refreshed} />}</div></div>}
   </section>;
 }

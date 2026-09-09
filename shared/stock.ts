@@ -13,6 +13,14 @@ const positiveInteger = z.preprocess(value => typeof value === "string" ? Number
 
 export const quotaStatusSchema = z.enum(["available", "reserved"]);
 
+export const smartSearchInputSchema = z.object({
+  administrator: z.string().trim().max(160).default(""),
+  category: z.string().trim().min(1, "Selecione a categoria").max(80),
+  targetCredit: z.number().finite().positive("Informe o crédito desejado").max(999999999999.99).multipleOf(0.01, "Informe o crédito com até duas casas decimais"),
+  priority: z.enum(["entry", "installment", "balance"], { error: "Selecione o critério decisor" }),
+});
+export type SmartSearchInput = z.infer<typeof smartSearchInputSchema>;
+
 export const quotaInputSchema = z.object({
   code: z.string().trim().min(1, "Informe o código").max(80),
   category: z.string().trim().min(1, "Informe a categoria").max(80),
@@ -22,7 +30,7 @@ export const quotaInputSchema = z.object({
   entryAmount: positiveMoney,
   installmentCount: positiveInteger,
   installmentAmount: positiveMoney,
-  outstandingBalance: positiveMoney,
+  outstandingBalance: z.preprocess(parseBrazilianNumber, z.number().finite()),
   status: quotaStatusSchema.default("available"),
   featured: z.boolean().default(false),
 });

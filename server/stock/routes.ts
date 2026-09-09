@@ -1,10 +1,11 @@
 import { and, asc, count, desc, eq, ilike, inArray, or, sql, type SQL } from "drizzle-orm";
 import { Router, type NextFunction, type Request, type RequestHandler, type Response } from "express";
 import { z } from "zod";
-import { quotaImportSchema, quotaInputSchema, quotaStatusSchema, quotaUpdateSchema, validateImportRows, type QuotaInput } from "../../shared/stock";
+import { quotaImportSchema, quotaInputSchema, quotaStatusSchema, quotaUpdateSchema, smartSearchInputSchema, validateImportRows, type QuotaInput } from "../../shared/stock";
 import { getCurrentUser } from "../auth/current-user";
 import { getDatabase } from "../db/client";
 import { quotas } from "../db/schema";
+import { findSmartCombination } from "./smart-search";
 
 export const stockRouter = Router();
 
@@ -54,8 +55,20 @@ stockRouter.get("/", asyncRoute(async (req, res) => {
   if (!["admin", "administrative"].includes(current.role)) conditions.push(eq(quotas.status, "available"));
   else if (requestedStatus.success) conditions.push(eq(quotas.status, requestedStatus.data));
   const where = conditions.length ? and(...conditions) : undefined;
+  const entryPercent = sql`${quotas.entryAmount} / nullif(${quotas.creditAmount}, 0)`;
+  const sortOrders: Record<string, SQL> = {
+    credit_asc: asc(quotas.creditAmount), credit_desc: desc(quotas.creditAmount),
+    entry_percent_asc: sql`${entryPercent} asc nulls last`,
+    entry_percent_desc: sql`${entryPercent} desc nulls last`,
+    entry_asc: asc(quotas.entryAmount), entry_desc: desc(quotas.entryAmount),
+    installment_asc: asc(quotas.installmentAmount), installment_desc: desc(quotas.installmentAmount),
+    term_asc: asc(quotas.installmentCount), term_desc: desc(quotas.installmentCount),
+    balance_asc: asc(quotas.outstandingBalance), balance_desc: desc(quotas.outstandingBalance),
+  };
+  const sort = typeof req.query.sort === "string" && Object.hasOwn(sortOrders, req.query.sort) ? sortOrders[req.query.sort] : undefined;
+  const order = sort ? [sort, asc(quotas.code), asc(quotas.id)] : [desc(quotas.featured), asc(quotas.creditAmount), asc(quotas.code), asc(quotas.id)];
   const [items, totalResult] = await Promise.all([
-    db.select().from(quotas).where(where).orderBy(desc(quotas.featured), asc(quotas.creditAmount), asc(quotas.code)).limit(pageSize).offset((page - 1) * pageSize),
+    db.select().from(quotas).where(where).orderBy(...order).limit(pageSize).offset((page - 1) * pageSize),
     db.select({ value: count() }).from(quotas).where(where),
   ]);
   const total = totalResult[0]?.value ?? 0;
@@ -111,15 +124,17 @@ stockRouter.delete("/:id", asyncRoute(async (req, res) => {
 
 stockRouter.post("/smart-search", asyncRoute(async (req, res) => {
   const current = await requireUser(req, res); if (!current) return;
-  const input = z.object({ administrator: z.string().min(1), category: z.string().min(1), targetCredit: z.number().positive(), priority: z.enum(["installment", "entry", "balance"]) }).safeParse(req.body);
+  const input = smartSearchInputSchema.safeParse(req.body);
   if (!input.success) return res.status(400).json({ error: input.error.issues[0]?.message ?? "Busca inválida" });
   const db = getDatabase(); if (!db) return res.status(503).json({ error: "Banco de dados não configurado" });
-  const candidates = await db.select().from(quotas).where(and(eq(quotas.status, "available"), eq(quotas.administrator, input.data.administrator), eq(quotas.category, input.data.category))).limit(5000);
-  const key = input.data.priority === "installment" ? "installmentAmount" : input.data.priority === "entry" ? "entryAmount" : "outstandingBalance";
-  const sorted = [...candidates].sort((a, b) => Number(a[key]) / Number(a.creditAmount) - Number(b[key]) / Number(b.creditAmount));
-  const selected: typeof candidates = []; let total = 0;
-  for (const item of sorted) { if (total >= input.data.targetCredit) break; selected.push(item); total += Number(item.creditAmount); }
-  return res.json({ items: selected, creditTotal: total, difference: total - input.data.targetCredit });
+  const conditions = [eq(quotas.status, "available"), eq(quotas.category, input.data.category),
+    sql`${quotas.creditAmount} > 0`,
+    sql`${quotas.creditAmount} <= ${input.data.targetCredit}::numeric * 1.02`];
+  if (input.data.administrator) conditions.push(eq(quotas.administrator, input.data.administrator));
+  const candidates = await db.select().from(quotas).where(and(...conditions));
+  const result = await findSmartCombination(candidates, input.data);
+  const canSeeSupplier = ["admin", "administrative", "advisor"].includes(current.role);
+  return res.json({ ...result, items: result.items.map(item => canSeeSupplier ? item : { ...item, supplier: null }) });
 }));
 
 stockRouter.post("/", asyncRoute(async (req, res) => {
