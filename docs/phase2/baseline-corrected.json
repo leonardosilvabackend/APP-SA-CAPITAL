@@ -1,0 +1,369 @@
+{
+  "label": "baseline-corrected",
+  "date": "2026-09-11T13:39:36.753Z",
+  "node": "v24.18.0",
+  "cpu": "Intel(R) Celeron(R) N4020 CPU @ 1.10GHz",
+  "cores": 2,
+  "totalMemoryMB": 3737.88671875,
+  "fixture": {
+    "users": 100,
+    "stock": 1000,
+    "quotes": 1000,
+    "negotiations": 1000
+  },
+  "plans": [
+    {
+      "QUERY PLAN": [
+        {
+          "Plan": {
+            "Node Type": "Limit",
+            "Parallel Aware": false,
+            "Async Capable": false,
+            "Startup Cost": 0.15,
+            "Total Cost": 5.86,
+            "Plan Rows": 21,
+            "Plan Width": 470,
+            "Actual Startup Time": 0.02,
+            "Actual Total Time": 0.03,
+            "Actual Rows": 21,
+            "Actual Loops": 1,
+            "Shared Hit Blocks": 4,
+            "Shared Read Blocks": 0,
+            "Shared Dirtied Blocks": 0,
+            "Shared Written Blocks": 0,
+            "Local Hit Blocks": 0,
+            "Local Read Blocks": 0,
+            "Local Dirtied Blocks": 0,
+            "Local Written Blocks": 0,
+            "Temp Read Blocks": 0,
+            "Temp Written Blocks": 0,
+            "Plans": [
+              {
+                "Node Type": "Index Scan",
+                "Parent Relationship": "Outer",
+                "Parallel Aware": false,
+                "Async Capable": false,
+                "Scan Direction": "Backward",
+                "Index Name": "saved_quotes_created_at_idx",
+                "Relation Name": "saved_quotes",
+                "Alias": "saved_quotes",
+                "Startup Cost": 0.15,
+                "Total Cost": 313.43,
+                "Plan Rows": 1152,
+                "Plan Width": 470,
+                "Actual Startup Time": 0.018,
+                "Actual Total Time": 0.025,
+                "Actual Rows": 21,
+                "Actual Loops": 1,
+                "Shared Hit Blocks": 4,
+                "Shared Read Blocks": 0,
+                "Shared Dirtied Blocks": 0,
+                "Shared Written Blocks": 0,
+                "Local Hit Blocks": 0,
+                "Local Read Blocks": 0,
+                "Local Dirtied Blocks": 0,
+                "Local Written Blocks": 0,
+                "Temp Read Blocks": 0,
+                "Temp Written Blocks": 0
+              }
+            ]
+          },
+          "Planning": {
+            "Shared Hit Blocks": 5,
+            "Shared Read Blocks": 0,
+            "Shared Dirtied Blocks": 0,
+            "Shared Written Blocks": 0,
+            "Local Hit Blocks": 0,
+            "Local Read Blocks": 0,
+            "Local Dirtied Blocks": 0,
+            "Local Written Blocks": 0,
+            "Temp Read Blocks": 0,
+            "Temp Written Blocks": 0
+          },
+          "Planning Time": 0.199,
+          "Triggers": [],
+          "Execution Time": 0.049
+        }
+      ]
+    }
+  ],
+  "results": [
+    {
+      "concurrency": 20,
+      "elapsedMs": 22188.0828,
+      "cpuOneCorePercent": 41.477220375254774,
+      "peakRssMB": 272.01171875,
+      "peakConnections": 11,
+      "peakWaiting": 9,
+      "queries": 6333,
+      "eventLoopP99Ms": 458.751999,
+      "endpoints": {
+        "stock": {
+          "requests": 34,
+          "p50": 4873.6211,
+          "p95": 8489.292000000001,
+          "p99": 8492.199699999997,
+          "meanBytes": 8373,
+          "status": {
+            "200": 34
+          }
+        },
+        "negotiations": {
+          "requests": 5,
+          "p50": 4980.081300000002,
+          "p95": 6395.011100000003,
+          "p99": 6395.011100000003,
+          "meanBytes": 1080691,
+          "status": {
+            "200": 5
+          }
+        },
+        "smart": {
+          "requests": 6,
+          "p50": 6454.827599999997,
+          "p95": 8025.040399999998,
+          "p99": 8025.040399999998,
+          "meanBytes": 2687,
+          "status": {
+            "200": 6
+          }
+        },
+        "quotes": {
+          "requests": 6,
+          "p50": 10017.541799999999,
+          "p95": 11846.511299999998,
+          "p99": 11846.511299999998,
+          "meanBytes": 1039327.6666666666,
+          "status": {
+            "200": 6
+          }
+        },
+        "fb": {
+          "requests": 1,
+          "p50": 10386.0419,
+          "p95": 10386.0419,
+          "p99": 10386.0419,
+          "meanBytes": 147,
+          "status": {
+            "200": 1
+          }
+        },
+        "upload": {
+          "requests": 4,
+          "p50": 10497.2879,
+          "p95": 10500.3475,
+          "p99": 10500.3475,
+          "meanBytes": 256,
+          "status": {
+            "201": 4
+          }
+        },
+        "import": {
+          "requests": 1,
+          "p50": 5713.635800000004,
+          "p95": 5713.635800000004,
+          "p99": 5713.635800000004,
+          "meanBytes": 17,
+          "status": {
+            "200": 1
+          }
+        },
+        "reservation": {
+          "requests": 10,
+          "p50": 2737.734099999994,
+          "p95": 3519.862200000003,
+          "p99": 3519.862200000003,
+          "meanBytes": 387,
+          "status": {
+            "200": 10
+          }
+        }
+      }
+    },
+    {
+      "concurrency": 50,
+      "elapsedMs": 37614.079999999994,
+      "cpuOneCorePercent": 43.86389352072416,
+      "peakRssMB": 420.40234375,
+      "peakConnections": 11,
+      "peakWaiting": 8,
+      "queries": 15598,
+      "eventLoopP99Ms": 467.140607,
+      "endpoints": {
+        "stock": {
+          "requests": 84,
+          "p50": 9507.191399999996,
+          "p95": 13651.9948,
+          "p99": 13727.485699999997,
+          "meanBytes": 8453,
+          "status": {
+            "200": 84
+          }
+        },
+        "negotiations": {
+          "requests": 10,
+          "p50": 4852.712499999994,
+          "p95": 13905.634899999997,
+          "p99": 13905.634899999997,
+          "meanBytes": 1091861,
+          "status": {
+            "200": 10
+          }
+        },
+        "smart": {
+          "requests": 15,
+          "p50": 12519.716700000004,
+          "p95": 16069.748899999999,
+          "p99": 16069.748899999999,
+          "meanBytes": 2687,
+          "status": {
+            "200": 15
+          }
+        },
+        "quotes": {
+          "requests": 15,
+          "p50": 17396.304300000003,
+          "p95": 22920.257000000005,
+          "p99": 22920.257000000005,
+          "meanBytes": 1040107,
+          "status": {
+            "200": 15
+          }
+        },
+        "upload": {
+          "requests": 11,
+          "p50": 11682.706700000002,
+          "p95": 15350.178499999995,
+          "p99": 15350.178499999995,
+          "meanBytes": 256,
+          "status": {
+            "201": 11
+          }
+        },
+        "fb": {
+          "requests": 1,
+          "p50": 11677.943,
+          "p95": 11677.943,
+          "p99": 11677.943,
+          "meanBytes": 147,
+          "status": {
+            "200": 1
+          }
+        },
+        "import": {
+          "requests": 1,
+          "p50": 4560.192199999998,
+          "p95": 4560.192199999998,
+          "p99": 4560.192199999998,
+          "meanBytes": 17,
+          "status": {
+            "200": 1
+          }
+        },
+        "reservation": {
+          "requests": 10,
+          "p50": 17224.8635,
+          "p95": 18950.8035,
+          "p99": 18950.8035,
+          "meanBytes": 387,
+          "status": {
+            "200": 10
+          }
+        }
+      }
+    },
+    {
+      "concurrency": 100,
+      "elapsedMs": 54056.43479999999,
+      "cpuOneCorePercent": 39.166474959610184,
+      "peakRssMB": 507.40234375,
+      "peakConnections": 11,
+      "peakWaiting": 5,
+      "queries": 20827,
+      "eventLoopP99Ms": 185.073663,
+      "endpoints": {
+        "stock": {
+          "requests": 119,
+          "p50": 1659.853099999993,
+          "p95": 20872.780700000003,
+          "p99": 21113.425400000007,
+          "meanBytes": 8533,
+          "status": {
+            "200": 119
+          }
+        },
+        "negotiations": {
+          "requests": 15,
+          "p50": 5175.704199999993,
+          "p95": 22287.191300000006,
+          "p99": 22287.191300000006,
+          "meanBytes": 1103061,
+          "status": {
+            "200": 15
+          }
+        },
+        "smart": {
+          "requests": 20,
+          "p50": 18241.0628,
+          "p95": 24667.585099999997,
+          "p99": 24667.585099999997,
+          "meanBytes": 2687,
+          "status": {
+            "200": 20
+          }
+        },
+        "upload": {
+          "requests": 20,
+          "p50": 24499.463999999993,
+          "p95": 27165.1428,
+          "p99": 27165.1428,
+          "meanBytes": 256,
+          "status": {
+            "201": 20
+          }
+        },
+        "quotes": {
+          "requests": 20,
+          "p50": 28669.26460000001,
+          "p95": 30012.252499999988,
+          "p99": 30012.252499999988,
+          "meanBytes": 572463.1,
+          "status": {
+            "200": 11,
+            "network": 9
+          }
+        },
+        "fb": {
+          "requests": 1,
+          "p50": 22355.946299999996,
+          "p95": 22355.946299999996,
+          "p99": 22355.946299999996,
+          "meanBytes": 147,
+          "status": {
+            "200": 1
+          }
+        },
+        "import": {
+          "requests": 1,
+          "p50": 20079.68299999999,
+          "p95": 20079.68299999999,
+          "p99": 20079.68299999999,
+          "meanBytes": 17,
+          "status": {
+            "200": 1
+          }
+        },
+        "reservation": {
+          "requests": 10,
+          "p50": 10988.2935,
+          "p95": 11465.768899999995,
+          "p99": 11465.768899999995,
+          "meanBytes": 387,
+          "status": {
+            "200": 10
+          }
+        }
+      }
+    }
+  ]
+}

@@ -1,8 +1,9 @@
+import { moneyCents, moneyNumber, roundRatio, sumMoney } from "./money";
 import { z } from "zod";
 
 export const quoteCalculationInputSchema = z.object({
   quotaIds: z.array(z.string().uuid()).min(1, "Selecione ao menos uma cota"),
-  commissionRate: z.number().min(0).max(8),
+  commissionRate: z.number().min(0).max(8).multipleOf(0.01),
 });
 
 export type CalculationQuota = {
@@ -21,15 +22,15 @@ const number = (value: number | string) => Number(value);
 
 export function insuranceForQuota(quota: Pick<CalculationQuota, "category" | "outstandingBalance">) {
   const category = quota.category.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
-  const rate = category === "imovel" ? 0.0005511 : category === "veiculo" ? 0.0008811 : 0;
-  return number(quota.outstandingBalance) * rate;
+  const numerator = category === "imovel" ? 5511n : category === "veiculo" ? 8811n : 0n;
+  return moneyNumber(roundRatio(moneyCents(quota.outstandingBalance), numerator, 10000000n));
 }
 
 export function buildInstallmentCascade(quotas: CalculationQuota[]) {
   const endingTerms = Array.from(new Set(quotas.map(quota => quota.installmentCount))).sort((a, b) => a - b);
   let from = 1;
   return endingTerms.map(to => {
-    const amount = quotas.filter(quota => quota.installmentCount >= from).reduce((total, quota) => total + number(quota.installmentAmount), 0);
+    const amount = moneyNumber(sumMoney(quotas.filter(quota => quota.installmentCount >= from).map(quota => quota.installmentAmount)));
     const period = { from, to, amount };
     from = to + 1;
     return period;
@@ -38,10 +39,11 @@ export function buildInstallmentCascade(quotas: CalculationQuota[]) {
 
 export function calculateQuote(quotas: CalculationQuota[], commissionRate: number) {
   if (commissionRate < 0 || commissionRate > 8) throw new Error("Comissão fora da faixa permitida");
-  const creditTotal = quotas.reduce((total, quota) => total + number(quota.creditAmount), 0);
-  const baseEntryTotal = quotas.reduce((total, quota) => total + number(quota.entryAmount), 0);
-  const commissionTotal = creditTotal * commissionRate / 100;
-  const finalEntryTotal = baseEntryTotal + commissionTotal;
+  const credit = sumMoney(quotas.map(quota => quota.creditAmount));
+  const creditTotal = moneyNumber(credit);
+  const baseEntryTotal = moneyNumber(sumMoney(quotas.map(quota => quota.entryAmount)));
+  const commissionTotal = moneyNumber(roundRatio(credit, moneyCents(commissionRate), 10000n));
+  const finalEntryTotal = moneyNumber(sumMoney([baseEntryTotal, commissionTotal]));
   return {
     creditTotal,
     baseEntryTotal,
@@ -49,9 +51,9 @@ export function calculateQuote(quotas: CalculationQuota[], commissionRate: numbe
     commissionTotal,
     finalEntryTotal,
     entryPercentage: creditTotal ? finalEntryTotal / creditTotal * 100 : 0,
-    outstandingBalanceTotal: quotas.reduce((total, quota) => total + number(quota.outstandingBalance), 0),
-    transferFeeTotal: creditTotal * 0.013,
-    insuranceTotal: quotas.reduce((total, quota) => total + insuranceForQuota(quota), 0),
+    outstandingBalanceTotal: moneyNumber(sumMoney(quotas.map(quota => quota.outstandingBalance))),
+    transferFeeTotal: moneyNumber(roundRatio(credit, 13n, 1000n)),
+    insuranceTotal: moneyNumber(sumMoney(quotas.map(insuranceForQuota))),
     installmentCascade: buildInstallmentCascade(quotas),
   };
 }

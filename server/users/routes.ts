@@ -1,11 +1,11 @@
 import { and, asc, eq, or, sql } from "drizzle-orm";
 import { Router, type NextFunction, type Request, type RequestHandler, type Response } from "express";
 import { z } from "zod";
-import { createUserInputSchema, updateUserInputSchema } from "../../shared/contracts";
+import { createUserInputSchema, updateUserInputSchema, DEFAULT_USER_PASSWORD } from "../../shared/contracts";
 import { getCurrentUser } from "../auth/current-user";
 import { hashPassword } from "../auth/password";
 import { getDatabase } from "../db/client";
-import { users } from "../db/schema";
+import { users, passwordResetTokens } from "../db/schema";
 
 export const usersRouter = Router();
 function asyncRoute(handler: (req: Request, res: Response, next: NextFunction) => Promise<unknown>): RequestHandler { return (req, res, next) => { void handler(req, res, next).catch(next); }; }
@@ -27,7 +27,7 @@ usersRouter.post("/", asyncRoute(async (req, res) => {
   let managerId = current.role === "advisor" ? current.id : parsed.data.managerId ?? null;
   if (parsed.data.role === "user" && managerId) { const [advisor] = await db.select({ id: users.id }).from(users).where(and(eq(users.id, managerId), eq(users.role, "advisor"))).limit(1); if (!advisor) return res.status(400).json({ error: "Selecione um assessor válido" }); }
   if (parsed.data.role !== "user") managerId = null;
-  try { const passwordHash = await hashPassword(parsed.data.password); const [created] = await db.insert(users).values({ name: parsed.data.name, email: parsed.data.email, phone: parsed.data.phone || null, passwordHash, role: parsed.data.role, managerId, mustChangePassword: true }).returning(); return res.status(201).json({ user: publicUser(created) }); }
+  try { const passwordHash = await hashPassword(DEFAULT_USER_PASSWORD); const [created] = await db.insert(users).values({ name: parsed.data.name, email: parsed.data.email, phone: parsed.data.phone || null, passwordHash, role: parsed.data.role, managerId, mustChangePassword: true }).returning(); return res.status(201).json({ user: publicUser(created) }); }
   catch (error) { if (typeof error === "object" && error && "code" in error && error.code === "23505") return res.status(409).json({ error: "Já existe um usuário com este e-mail" }); throw error; }
 }));
 
@@ -77,4 +77,19 @@ usersRouter.delete("/:id", asyncRoute(async (req, res) => {
     if (databaseErrorCode(error) === "23503") return res.status(409).json({ error: "Este usuário possui histórico vinculado e não pode ser excluído. Desative o acesso para preservar os registros." });
     throw error;
   }
+}));
+
+usersRouter.post("/:id/reset-password", asyncRoute(async (req, res) => {
+  const current = await manager(req, res); if (!current) return;
+  if (!z.string().uuid().safeParse(req.params.id).success) return res.status(400).json({ error: "Usuário inválido" });
+  const db = getDatabase()!;
+  const passwordHash = await hashPassword(DEFAULT_USER_PASSWORD);
+  const updated = await db.transaction(async tx => {
+    const access = current.role === "admin" ? eq(users.id, req.params.id) : and(eq(users.id, req.params.id), eq(users.managerId, current.id), eq(users.role, "user"));
+    const [target] = await tx.update(users).set({ passwordHash, mustChangePassword: true, sessionVersion: sql`${users.sessionVersion} + 1`, updatedAt: new Date() }).where(access).returning({ id: users.id });
+    if (target) await tx.delete(passwordResetTokens).where(eq(passwordResetTokens.userId, target.id));
+    return target;
+  });
+  if (!updated) return res.status(404).json({ error: "Usuário não encontrado" });
+  return res.json({ success: true, message: "Senha resetada. A troca será obrigatória no próximo acesso." });
 }));

@@ -14,6 +14,50 @@ export const administrators = pgTable("administrators", {
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
+export const auditEvents = pgTable("audit_events", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  actorId: uuid("actor_id"),
+  action: varchar("action", { length: 80 }).notNull(),
+  entityId: uuid("entity_id"),
+  details: jsonb("details").$type<Record<string, unknown>>().notNull().default({}),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, table => [index("audit_events_entity_idx").on(table.entityId, table.createdAt)]);
+
+export const stockSyncRuns = pgTable("stock_sync_runs", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  source: varchar("source", { length: 20 }).notNull(),
+  status: varchar("status", { length: 20 }).notNull(),
+  result: jsonb("result").$type<{ received: number; created: number; updated: number; reserved: number; reactivated: number }>(),
+  error: text("error"),
+  startedAt: timestamp("started_at", { withTimezone: true }).defaultNow().notNull(),
+  finishedAt: timestamp("finished_at", { withTimezone: true }),
+}, table => [index("stock_sync_runs_started_idx").on(table.startedAt)]);
+
+export const storageCleanup = pgTable("storage_cleanup", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  path: text("path").notNull().unique(),
+  attempts: integer("attempts").notNull().default(0),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const authRateLimits = pgTable("auth_rate_limits", {
+  key: varchar("key", { length: 64 }).primaryKey(),
+  attempts: integer("attempts").notNull(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+}, table => [index("auth_rate_limits_expiry_idx").on(table.expiresAt)]);
+
+export const emailJobs = pgTable("email_jobs", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  recipientName: varchar("recipient_name", { length: 160 }).notNull(),
+  recipientEmail: varchar("recipient_email", { length: 320 }).notNull(),
+  subject: text("subject").notNull(),
+  message: text("message").notNull(),
+  attempts: integer("attempts").notNull().default(0),
+  nextAttemptAt: timestamp("next_attempt_at", { withTimezone: true }).defaultNow().notNull(),
+  sentAt: timestamp("sent_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, table => [index("email_jobs_pending_idx").on(table.sentAt, table.nextAttemptAt)]);
+
 export const userRole = pgEnum("user_role", ["admin", "partner", "administrative", "advisor", "user"]);
 export const userStatus = pgEnum("user_status", ["active", "inactive"]);
 export const quotaStatus = pgEnum("quota_status", ["available", "reserved", "sold"]);
@@ -45,6 +89,7 @@ export const passwordResetTokens = pgTable("password_reset_tokens", {
 export const quotas = pgTable("quotas", {
   id: uuid("id").defaultRandom().primaryKey(),
   code: varchar("code", { length: 80 }).notNull().unique(),
+  externalId: varchar("external_id", { length: 120 }),
   category: varchar("category", { length: 80 }).notNull(),
   administrator: varchar("administrator", { length: 160 }).notNull(),
   supplier: varchar("supplier", { length: 160 }),
@@ -54,6 +99,7 @@ export const quotas = pgTable("quotas", {
   installmentAmount: numeric("installment_amount", { precision: 14, scale: 2 }).notNull(),
   outstandingBalance: numeric("outstanding_balance", { precision: 14, scale: 2 }).notNull(),
   status: quotaStatus("status").notNull().default("available"),
+  reservationOrigin: varchar("reservation_origin", { length: 20 }),
   featured: boolean("featured").notNull().default(false),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
@@ -65,6 +111,8 @@ export const savedQuotes = pgTable("saved_quotes", {
   creatorId: uuid("creator_id").references(() => users.id).notNull(),
   selectedQuotas: jsonb("selected_quotas").$type<CalculationQuota[]>().notNull(),
   commissionRate: numeric("commission_rate", { precision: 5, scale: 2 }).notNull(),
+  opportunityReason: text("opportunity_reason"),
+  opportunityActive: boolean("opportunity_active").notNull().default(false),
   expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 }, table => [index("saved_quotes_creator_id_idx").on(table.creatorId), index("saved_quotes_created_at_idx").on(table.createdAt), index("saved_quotes_expires_at_idx").on(table.expiresAt)]);
@@ -140,6 +188,17 @@ export const preAnalyses = pgTable("pre_analyses", {
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });
+
+export const notifications = pgTable("notifications", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  recipientId: uuid("recipient_id").references(() => users.id, { onDelete: "cascade" }),
+  audienceRole: varchar("audience_role", { length: 30 }),
+  title: varchar("title", { length: 180 }).notNull(),
+  message: text("message").notNull(),
+  link: text("link"),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, table => [index("notifications_recipient_expiry_idx").on(table.recipientId, table.expiresAt), index("notifications_role_expiry_idx").on(table.audienceRole, table.expiresAt)]);
 
 export const preAnalysisDocuments = pgTable("pre_analysis_documents", {
   id: uuid("id").defaultRandom().primaryKey(),

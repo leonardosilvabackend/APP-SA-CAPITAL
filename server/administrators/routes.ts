@@ -1,3 +1,4 @@
+import { validateFile } from "../files/validation";
 import { createClient } from "@supabase/supabase-js";
 import { asc, eq } from "drizzle-orm";
 import express, { Router, type Request, type Response, type NextFunction, type RequestHandler } from "express";
@@ -44,7 +45,9 @@ const saveAdministrator = asyncRoute(async (req, res) => {
   async function upload(file: (typeof documents)[number]): Promise<AdministratorFile> {
     const fileId = crypto.randomUUID();
     const storagePath = `administrators/${id}/${fileId}`;
-    const result = await storage().upload(storagePath, Buffer.from(file.base64, "base64"), { contentType: file.mimeType, upsert: false });
+    const buffer = Buffer.from(file.base64, "base64");
+    validateFile(buffer, file.mimeType, 10 * 1024 * 1024);
+    const result = await storage().upload(storagePath, buffer, { contentType: file.mimeType, upsert: false });
     if (result.error) throw new Error("Não foi possível enviar os arquivos da administradora");
     uploaded.push(storagePath);
     return { id: fileId, name: file.name, mimeType: file.mimeType, storagePath };

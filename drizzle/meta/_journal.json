@@ -50,6 +50,48 @@
       "when": 1788620365291,
       "tag": "0006_yielding_speed",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1788921126809,
+      "tag": "0007_sharp_namor",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1789086149358,
+      "tag": "0008_clever_moon_knight",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1789086257000,
+      "tag": "0009_gigantic_moira_mactaggert",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1789087097081,
+      "tag": "0010_wealthy_outlaw_kid",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1789087576854,
+      "tag": "0011_windy_doorman",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1789160400000,
+      "tag": "0012_flawless_lester",
+      "breakpoints": true
     }
   ]
 }

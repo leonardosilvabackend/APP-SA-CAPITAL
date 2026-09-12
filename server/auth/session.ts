@@ -38,7 +38,7 @@ function parseCookies(req: Request) {
 }
 
 export function getSessionToken(req: Request) {
-  return parseCookies(req)[SESSION_COOKIE];
+  try { return parseCookies(req)[SESSION_COOKIE]; } catch { return undefined; }
 }
 
 export function setSessionCookie(res: Response, token: string) {

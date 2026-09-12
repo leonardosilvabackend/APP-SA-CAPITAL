@@ -1,0 +1,1 @@
+ALTER TABLE "quotas" ADD COLUMN "external_id" varchar(120);

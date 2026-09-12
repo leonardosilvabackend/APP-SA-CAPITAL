@@ -2,13 +2,15 @@
 
 O serviço executa a interface e a API no mesmo processo Node.js 22.
 
+Antes do próximo deploy, siga os [ajustes obrigatórios de ambientes](docs/AMBIENTES.md). Configure APP_ENV=production, DATABASE_ENV=production, NODE_ENV=production, EMAIL_ENABLED=true e ENABLE_SCHEDULED_JOBS=true. Migrations exigem CONFIRM_PRODUCTION_MIGRATIONS=apply-production-migrations e identificação de deploy Railway. FB_SYNC_ENABLED permanece false até aprovação.
+
 ## Configuração do serviço
 
 - Instalação: `pnpm install --frozen-lockfile`
 - Build: `pnpm build`
-- Pré-deploy: `pnpm db:migrate` (com as dependências de desenvolvimento disponíveis)
+- Pré-deploy: `pnpm db:migrate:prod` (com as dependências de desenvolvimento disponíveis)
 - Início: `pnpm start`
-- Healthcheck: `/api/health`
+- Healthcheck de prontidao: `/api/ready` (503 se o banco/estruturas nao estiverem disponiveis).
 
 Configure as variáveis no Railway antes do primeiro deploy:
 
@@ -34,3 +36,7 @@ O Railway fornece `PORT` automaticamente. Não envie o arquivo `.env` no pacote 
 O healthcheck confirma que o servidor responde; ele não testa conectividade com o banco nem Storage.
 
 Documentação: https://docs.railway.com/cli/deploying
+
+## Requisitos acrescentados pela FASE 1
+
+Consulte [FASE-1](docs/FASE-1.md) antes de autorizar qualquer deploy. `DATABASE_URL` deve pertencer ao usuario restrito de execucao; disponibilize `SA_MIGRATION_DATABASE_URL` apenas ao passo de migrations. O runner aplica um arquivo por transacao e nao provisiona Storage em PostgreSQL independente. Configure `TRUST_PROXY_HOPS` conforme a topologia real e mantenha a auditoria sem permissoes de alteracao/exclusao para o aplicativo. As validacoes locais nao substituem homologacao de Storage, emails, backups e secrets no provedor.

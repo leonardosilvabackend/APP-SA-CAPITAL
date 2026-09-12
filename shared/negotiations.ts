@@ -1,3 +1,4 @@
+import { moneyCents } from "./money";
 import { z } from "zod";
 import type { CalculationQuota } from "./quote";
 
@@ -12,8 +13,9 @@ export const negotiationStatusLabels: Record<typeof negotiationStatuses[number],
 export const canEditNegotiation = (role: string) => ["admin", "advisor", "administrative"].includes(role);
 export const moneyInput = z.string().regex(/^(0|[1-9]\d{0,11})(\.\d{1,2})?$/, "Informe um valor positivo com até duas casas decimais");
 export function cents(value: string) {
-  const [whole, fraction = ""] = value.replace(/^-/, "").split(".");
-  return (Number(whole) * 100 + Number(fraction.padEnd(2, "0"))) * (value.startsWith("-") ? -1 : 1);
+  const result = moneyCents(value);
+  if (result > BigInt(Number.MAX_SAFE_INTEGER) || result < BigInt(Number.MIN_SAFE_INTEGER)) throw new Error("Valor monetario excede a faixa segura");
+  return Number(result);
 }
 export function decimal(value: number) { return (value / 100).toFixed(2); }
 export function paymentTotals(entry: string, payments: { amount: string; kind: string }[]) {

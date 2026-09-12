@@ -1,3 +1,4 @@
+import { updateSessionCache } from "./lib/sessionCache";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Building2,
@@ -11,6 +12,7 @@ import {
   Menu,
   PackageSearch,
   Settings,
+  ScrollText,
   Users,
   WalletCards,
   X,
@@ -26,6 +28,8 @@ import PreAnalysesPage from "./pages/PreAnalysesPage";
 import SettingsPage from "./pages/SettingsPage";
 import { AdministradorasPage } from "./pages/AdministradorasPage";
 import NegotiationsPage from "./pages/NegotiationsPage";
+import FbSyncStatus from "./pages/FbSyncStatus";
+import AuditPage from "./pages/AuditPage";
 import { toast } from "sonner";
 import { selectionSurface } from "./lib/selectionSurface";
 
@@ -38,6 +42,7 @@ const navigation = [
   { href: "/administradoras", label: "Administradoras", icon: Building2, roles: ["admin", "administrative", "advisor", "user"] },
   { href: "/pre-analises", label: "Pré-análises", icon: FileSearch, roles: ["admin", "administrative", "advisor", "user"] },
   { href: "/usuarios", label: "Usuários", icon: Users, roles: ["admin", "advisor"] },
+  { href: "/auditoria", label: "Auditoria", icon: ScrollText, roles: ["admin"] },
   { href: "/perfil", label: "Perfil", icon: CircleUser, roles: ["admin", "administrative", "advisor", "user"] },
   { href: "/configuracoes", label: "Configurações", icon: Settings, roles: ["admin", "administrative", "advisor", "user"] },
 ];
@@ -53,6 +58,8 @@ const pageContent: Record<string, { title: string; description: string; icon: ty
 function AppShell({ children, user, onLogout }: { children: ReactNode; user: AuthenticatedUser; onLogout: () => void }) {
   const [location] = useLocation();
   const [open, setOpen] = useState(false);
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const notifications = useQuery<{ items: { id: string; title: string; message: string; link: string | null; createdAt: string }[] }>({ queryKey: ["notifications"], queryFn: async () => { const response = await fetch("/api/notifications"); if (!response.ok) throw new Error("Notificações indisponíveis"); return response.json(); }, refetchInterval: 30_000 });
 
   return (
     <div className="app-shell">
@@ -80,7 +87,7 @@ function AppShell({ children, user, onLogout }: { children: ReactNode; user: Aut
         <header className="topbar">
           <button className="icon-button menu-button" onClick={() => setOpen(true)} aria-label="Abrir menu"><Menu size={21} /></button>
           <div className="topbar-title"><span>Portal SA Capital</span><small>Soluções em créditos</small></div>
-          <button className="icon-button" aria-label="Notificações"><Bell size={20} /></button>
+          <div className="notification-area"><button className="icon-button" aria-label="Notificações" onClick={() => setNotificationsOpen(value => !value)}><Bell size={20} />{!!notifications.data?.items.length && <span className="notification-badge">{Math.min(99, notifications.data.items.length)}</span>}</button>{notificationsOpen && <div className="notification-popover"><strong>Notificações</strong>{notifications.data?.items.length ? notifications.data.items.map(item => item.link ? <Link key={item.id} href={item.link} onClick={() => setNotificationsOpen(false)}><b>{item.title}</b><span>{item.message}</span><small>{new Date(item.createdAt).toLocaleString("pt-BR")}</small></Link> : <div key={item.id}><b>{item.title}</b><span>{item.message}</span><small>{new Date(item.createdAt).toLocaleString("pt-BR")}</small></div>) : <p>Nenhuma notificação nas últimas 48 horas.</p>}</div>}</div>
           <button className="icon-button" onClick={onLogout} aria-label="Sair"><LogOut size={20} /></button>
         </header>
         <main>{children}</main>
@@ -135,6 +142,7 @@ function Dashboard({ user }: { user: AuthenticatedUser }) {
     </section>
     <section className="metrics-grid">
       {cards.map(card => <article className="metric-card" key={card.label}><div className={`metric-icon ${card.tone}`}><card.icon size={21} /></div><span>{card.label}</span><strong>{card.value}</strong><small>{metrics.isError ? "Indicador temporariamente indisponível" : card.detail}</small></article>)}
+      {user.role === "admin" && <FbSyncStatus />}
     </section>
     {user.role === "admin" && reservations.data?.items.length ? <section className="panel reservation-panel"><span className="eyebrow">PEDIDOS DE RESERVA</span><h2>Aguardando aprovação</h2>{reservations.data.items.map(item => <div className="reservation-row" key={item.id} {...selectionSurface(() => navigate(`/cotacoes?id=${item.quoteId}`))} aria-label={`Consultar reserva de ${item.clientName}`}><div><strong>{item.clientName}</strong><small>{item.requesterName} • {new Date(item.createdAt).toLocaleString("pt-BR")}</small></div><button className="secondary-button" disabled={reviewReservation.isPending} onClick={() => reviewReservation.mutate({ id: item.id, status: "rejected" })}>Recusar</button><button className="primary-button button-reset" disabled={reviewReservation.isPending} onClick={() => reviewReservation.mutate({ id: item.id, status: "approved" })}>Aprovar e reservar</button></div>)}</section> : null}
     <section className={`content-grid${showInternalDashboard ? "" : " content-grid-user"}`}>
@@ -171,7 +179,7 @@ async function authRequest(path: string, body?: Record<string, string>) {
   return data;
 }
 
-function AuthPage({ onAuthenticated }: { onAuthenticated: (user: AuthenticatedUser) => void }) {
+function AuthPage({ onAuthenticated }: { onAuthenticated: (user: AuthenticatedUser) => void | Promise<void> }) {
   const setup = useQuery<{ needsSetup: boolean }>({ queryKey: ["setup-status"], queryFn: () => authRequest("setup-status"), retry: false });
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -214,8 +222,8 @@ function App() {
   const queryClient = useQueryClient();
   const me = useQuery<AuthenticatedUser | null>({
     queryKey: ["current-user"],
-    queryFn: async () => {
-      const response = await fetch("/api/auth/me", { credentials: "same-origin" });
+    queryFn: async ({ signal }) => {
+      const response = await fetch("/api/auth/me", { credentials: "same-origin", signal });
       if (response.status === 401) return null;
       if (!response.ok) throw new Error("Não foi possível validar sua sessão");
       return (await response.json()).user;
@@ -224,17 +232,18 @@ function App() {
   });
   const logout = async () => {
     await authRequest("logout", {});
-    queryClient.setQueryData(["current-user"], null);
+    await updateSessionCache(queryClient, null);
+    sessionStorage.removeItem("sa-capital-selected-quotas");
   };
 
   const resetToken = window.location.pathname === "/reset-password" ? new URLSearchParams(window.location.search).get("token") : null;
 
   if (resetToken) return <ResetPasswordPage token={resetToken} />;
   if (me.isLoading) return <div className="auth-loading">Validando sessão…</div>;
-  if (!me.data) return <AuthPage onAuthenticated={user => queryClient.setQueryData(["current-user"], user)} />;
+  if (!me.data) return <AuthPage onAuthenticated={async user => { sessionStorage.removeItem("sa-capital-selected-quotas"); await updateSessionCache(queryClient, user); }} />;
   if (me.data.mustChangePassword) return <ChangePasswordPage user={me.data} mandatory onChanged={user => queryClient.setQueryData(["current-user"], user)} />;
 
-  return <AppShell user={me.data} onLogout={logout}><Switch><Route path="/">{() => <Dashboard user={me.data!} />}</Route><Route path="/estoque">{() => <StockPage user={me.data!} />}</Route><Route path="/cotacoes" component={QuotesPage} /><Route path="/negociacoes">{() => <NegotiationsPage user={me.data!} />}</Route> <Route path="/administradoras">
+  return <AppShell user={me.data} onLogout={logout}><Switch><Route path="/">{() => <Dashboard user={me.data!} />}</Route><Route path="/estoque">{() => <StockPage user={me.data!} />}</Route><Route path="/cotacoes" component={QuotesPage} /><Route path="/negociacoes">{() => <NegotiationsPage user={me.data!} />}</Route><Route path="/auditoria">{() => me.data!.role === "admin" ? <AuditPage /> : <StockPage user={me.data!} />}</Route> <Route path="/administradoras">
   {() => (
     <AdministradorasPage isAdmin={me.data!.role === "admin"} />
   )}
