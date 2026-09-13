@@ -8,5 +8,5 @@ export default defineConfig({
       "@shared": path.resolve(import.meta.dirname, "shared"),
     },
   },
-  test: { environment: "node", include: ["**/*.test.ts"] },
+  test: { setupFiles: ["./server/test-setup.ts"], environment: "node", include: ["**/*.test.ts"] },
 });

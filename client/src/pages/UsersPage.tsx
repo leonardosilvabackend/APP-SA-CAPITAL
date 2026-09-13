@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Pencil, Plus, ShieldCheck, Trash2, UserCheck, UserX, Users, X } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { toast } from "sonner";
-import type { AuthenticatedUser } from "@shared/contracts";
+import { DEFAULT_USER_PASSWORD, type AuthenticatedUser } from "@shared/contracts";
 import { selectionSurface } from "../lib/selectionSurface";
 
 type UserRecord = AuthenticatedUser & {
@@ -31,7 +31,7 @@ export default function UsersPage({ currentUser }: { currentUser: AuthenticatedU
   const [editingId, setEditingId] = useState<string | null>(null);
   const [confirmation, setConfirmation] = useState<{ title: string; description: string; action: () => void; destructive?: boolean } | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [form, setForm] = useState({ name: "", email: "", phone: "", password: "", role: currentUser.role === "advisor" ? "user" : "user", managerId: currentUser.role === "advisor" ? currentUser.id : "" });
+  const [form, setForm] = useState({ name: "", email: "", phone: "", password: DEFAULT_USER_PASSWORD, role: currentUser.role === "advisor" ? "user" : "user", managerId: currentUser.role === "advisor" ? currentUser.id : "" });
   const usersQuery = useQuery<UserRecord[]>({
     queryKey: ["users"],
     queryFn: async () => (await userApi()).users,
@@ -40,7 +40,7 @@ export default function UsersPage({ currentUser }: { currentUser: AuthenticatedU
     mutationFn: () => userApi("", { method: "POST", body: JSON.stringify({ ...form, managerId: form.managerId || null }) }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["users"] });
-      setForm({ name: "", email: "", phone: "", password: "", role: "user", managerId: currentUser.role === "advisor" ? currentUser.id : "" });
+      setForm({ name: "", email: "", phone: "", password: DEFAULT_USER_PASSWORD, role: "user", managerId: currentUser.role === "advisor" ? currentUser.id : "" });
       setShowForm(false);
       toast.success("Usuário criado com sucesso");
     },
@@ -63,11 +63,16 @@ export default function UsersPage({ currentUser }: { currentUser: AuthenticatedU
     },
     onError: error => toast.error(error.message),
   });
-  const busy = createUser.isPending || updateUser.isPending || deleteUser.isPending;
+  const resetPassword = useMutation({
+    mutationFn: (id: string) => userApi(`/${id}/reset-password`, { method: "POST" }),
+    onSuccess: () => { void queryClient.invalidateQueries({ queryKey: ["users"] }); toast.success(`Senha resetada para ${DEFAULT_USER_PASSWORD}. Troca obrigatória no próximo acesso.`); },
+    onError: error => toast.error(error.message),
+  });
+  const busy = resetPassword.isPending || createUser.isPending || updateUser.isPending || deleteUser.isPending;
 
   function startForm(user?: UserRecord) {
     setEditingId(user?.id ?? null);
-    setForm({ name: user?.name ?? "", email: user?.email ?? "", phone: user?.phone ?? "", password: "", role: user?.role ?? "user", managerId: user?.managerId ?? (currentUser.role === "advisor" ? currentUser.id : "") });
+    setForm({ name: user?.name ?? "", email: user?.email ?? "", phone: user?.phone ?? "", password: DEFAULT_USER_PASSWORD, role: user?.role ?? "user", managerId: user?.managerId ?? (currentUser.role === "advisor" ? currentUser.id : "") });
     createUser.reset();
     setSelectedId(null);
     setShowForm(true);
@@ -110,7 +115,7 @@ export default function UsersPage({ currentUser }: { currentUser: AuthenticatedU
         <label>Telefone<input value={form.phone} onChange={event => setForm({ ...form, phone: event.target.value })} /></label>
         <label>Perfil<select value={form.role} disabled={currentUser.role === "advisor" || editingId === currentUser.id} onChange={event => setForm({ ...form, role: event.target.value, managerId: event.target.value === "user" ? form.managerId : "" })}><option value="user">Usuário</option>{currentUser.role === "admin" && <><option value="advisor">Assessor</option><option value="administrative">Administrativo</option><option value="admin">Administrador</option></>}</select></label>
         {currentUser.role === "admin" && form.role === "user" && <label>Assessor responsável<select value={form.managerId} onChange={event => setForm({ ...form, managerId: event.target.value })}><option value="">Sem assessor</option>{records.filter(item => item.role === "advisor").map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>}
-        {!editingId && <label>Senha inicial<input type="password" value={form.password} onChange={event => setForm({ ...form, password: event.target.value })} minLength={8} autoComplete="new-password" required /></label>}
+        {!editingId && <label>Senha inicial<input type="text" value={DEFAULT_USER_PASSWORD} readOnly minLength={8} autoComplete="new-password" required /></label>}
       </fieldset>
       {createUser.error && <div className="auth-error" role="alert">{createUser.error.message}</div>}
       <div className="form-actions"><button type="button" className="secondary-button" disabled={busy} onClick={() => setShowForm(false)}>Cancelar</button><button className="primary-button button-reset" disabled={busy}>{busy ? "Salvando…" : editingId ? "Salvar alterações" : "Criar usuário"}</button></div>
@@ -149,6 +154,7 @@ export default function UsersPage({ currentUser }: { currentUser: AuthenticatedU
     {selected && <div className="modal-backdrop" {...dismissBackdrop(() => setSelectedId(null))}><section className="stock-modal" role="dialog" aria-modal="true" aria-labelledby="selected-user-title">
       <div className="modal-heading"><div><span className="eyebrow">DADOS DO USUÁRIO</span><h2 id="selected-user-title">{selected.name}</h2></div><button type="button" className="icon-button" aria-label="Fechar dados do usuário" onClick={() => setSelectedId(null)}><X size={19} /></button></div>
       <dl className="selected-user-details"><div><dt>E-mail</dt><dd>{selected.email}</dd></div><div><dt>Telefone</dt><dd>{selected.phone || "Não informado"}</dd></div><div><dt>Perfil</dt><dd>{{ user: "Usuário", advisor: "Assessor", admin: "Administrador", administrative: "Administrativo" }[selected.role]}</dd></div><div><dt>Situação</dt><dd>{selected.status === "active" ? "Ativo" : "Inativo"}</dd></div><div><dt>Assessor responsável</dt><dd>{records.find(user => user.id === selected.managerId)?.name ?? "Não informado"}</dd></div><div><dt>Cadastrado em</dt><dd>{new Date(selected.createdAt).toLocaleString("pt-BR")}</dd></div></dl>
+      {(currentUser.role === "admin" || selected.managerId === currentUser.id && selected.role === "user") && <button className="secondary-button" disabled={busy} onClick={() => { setSelectedId(null); setConfirmation({ title: "Resetar senha", description: `A senha de ${selected.name} voltará para ${DEFAULT_USER_PASSWORD}. As sessões atuais serão encerradas e a troca será obrigatória no próximo acesso.`, action: () => resetPassword.mutate(selected.id) }); }}>Resetar senha</button>}
     </section></div>}
   </section>;
 }

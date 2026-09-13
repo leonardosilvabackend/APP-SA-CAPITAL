@@ -1,11 +1,17 @@
+import { moneyCents, moneyNumber } from "../../shared/money";
+import { shareSmartWork } from "./smart-capacity";
+import { trackedFbSync, persistedFbStatus } from "./fb-monitor";
+import { fbSyncStatus } from "./fb-scheduler";
+import { committedQuota, lockStock } from "./protection";
 import { and, asc, count, desc, eq, ilike, inArray, or, sql, type SQL } from "drizzle-orm";
-import { Router, type NextFunction, type Request, type RequestHandler, type Response } from "express";
+import express, { Router, type NextFunction, type Request, type RequestHandler, type Response } from "express";
 import { z } from "zod";
 import { quotaImportSchema, quotaInputSchema, quotaStatusSchema, quotaUpdateSchema, smartSearchInputSchema, validateImportRows, type QuotaInput } from "../../shared/stock";
 import { getCurrentUser } from "../auth/current-user";
 import { getDatabase } from "../db/client";
 import { quotas } from "../db/schema";
 import { findSmartCombination } from "./smart-search";
+import { FbSyncError, previewFbStockSync, syncFbStock } from "./fb-sync";
 
 export const stockRouter = Router();
 
@@ -23,16 +29,20 @@ async function requireUser(req: Request, res: Response, adminOnly = false) {
 function insertValues(data: QuotaInput) {
   return {
     ...data,
-    creditAmount: data.creditAmount.toFixed(2),
-    entryAmount: data.entryAmount.toFixed(2),
-    installmentAmount: data.installmentAmount.toFixed(2),
-    outstandingBalance: data.outstandingBalance.toFixed(2),
+    reservationOrigin: data.status === "reserved" ? "manual" : null,
+    creditAmount: moneyNumber(moneyCents(data.creditAmount)).toFixed(2),
+    entryAmount: moneyNumber(moneyCents(data.entryAmount)).toFixed(2),
+    installmentAmount: moneyNumber(moneyCents(data.installmentAmount)).toFixed(2),
+    outstandingBalance: moneyNumber(moneyCents(data.outstandingBalance)).toFixed(2),
   };
 }
 
 function updateValues(data: Partial<QuotaInput>) {
-  return { ...data, creditAmount: data.creditAmount?.toFixed(2), entryAmount: data.entryAmount?.toFixed(2), installmentAmount: data.installmentAmount?.toFixed(2), outstandingBalance: data.outstandingBalance?.toFixed(2) };
+  return { ...data, ...(data.status ? { reservationOrigin: data.status === "reserved" ? "manual" : null } : {}), creditAmount: data.creditAmount === undefined ? undefined : moneyNumber(moneyCents(data.creditAmount)).toFixed(2), entryAmount: data.entryAmount === undefined ? undefined : moneyNumber(moneyCents(data.entryAmount)).toFixed(2), installmentAmount: data.installmentAmount === undefined ? undefined : moneyNumber(moneyCents(data.installmentAmount)).toFixed(2), outstandingBalance: data.outstandingBalance === undefined ? undefined : moneyNumber(moneyCents(data.outstandingBalance)).toFixed(2) };
 }
+
+stockRouter.use("/import", asyncRoute(async (req, res, next) => { if (await requireUser(req, res, true)) next(); }), express.json({ limit: "10mb" }));
+stockRouter.use(express.json({ limit: "2mb" }));
 
 stockRouter.get("/", asyncRoute(async (req, res) => {
   const current = await requireUser(req, res);
@@ -106,10 +116,16 @@ stockRouter.post("/import/commit", asyncRoute(async (req, res) => {
   const validRows = results.flatMap(row => row.valid ? [insertValues(row.data)] : []);
   const db = getDatabase();
   if (!db) return res.status(503).json({ error: "Banco de dados não configurado" });
-  if (input.data.mode === "replace") await db.delete(quotas);
-  await db.insert(quotas).values(validRows).onConflictDoUpdate({
+  await db.transaction(async tx => {
+    await lockStock(tx);
+    // Repair active links before replacing: imports must never release an active negotiation.
+    await tx.update(quotas).set({ status: "reserved", reservationOrigin: "negotiation" }).where(and(committedQuota(), sql`${quotas.status} <> 'sold'`));
+    if (input.data.mode === "replace") await tx.delete(quotas).where(and(sql`${quotas.status} = 'available'`, sql`${quotas.externalId} is null`, sql`not ${committedQuota()}`, sql`${quotas.code} not in (${sql.join(validRows.map(row => sql`${row.code}`), sql`, `)})`));
+  for (let offset = 0; offset < validRows.length; offset += 100) await tx.insert(quotas).values(validRows.slice(offset, offset + 100)).onConflictDoUpdate({
     target: quotas.code,
-    set: { category: sql`excluded.category`, administrator: sql`excluded.administrator`, supplier: sql`excluded.supplier`, creditAmount: sql`excluded.credit_amount`, entryAmount: sql`excluded.entry_amount`, installmentCount: sql`excluded.installment_count`, installmentAmount: sql`excluded.installment_amount`, outstandingBalance: sql`excluded.outstanding_balance`, status: sql`excluded.status`, featured: sql`excluded.featured`, updatedAt: new Date() },
+    setWhere: and(eq(quotas.status, "available"), sql`${quotas.externalId} is null`, sql`not ${committedQuota()}`),
+    set: { category: sql`excluded.category`, administrator: sql`excluded.administrator`, supplier: sql`excluded.supplier`, creditAmount: sql`excluded.credit_amount`, entryAmount: sql`excluded.entry_amount`, installmentCount: sql`excluded.installment_count`, installmentAmount: sql`excluded.installment_amount`, outstandingBalance: sql`excluded.outstanding_balance`, status: sql`excluded.status`, reservationOrigin: sql`excluded.reservation_origin`, featured: sql`excluded.featured`, updatedAt: new Date() },
+  });
   });
   return res.json({ imported: validRows.length });
 }));
@@ -117,7 +133,7 @@ stockRouter.post("/import/commit", asyncRoute(async (req, res) => {
 stockRouter.delete("/:id", asyncRoute(async (req, res) => {
   if (!(await requireUser(req, res, true))) return;
   const db = getDatabase(); if (!db) return res.status(503).json({ error: "Banco de dados não configurado" });
-  const [deleted] = await db.delete(quotas).where(eq(quotas.id, req.params.id)).returning({ id: quotas.id });
+  const [deleted] = await db.delete(quotas).where(and(eq(quotas.id, req.params.id), sql`${quotas.status} <> 'reserved'`, sql`not ${committedQuota()}`)).returning({ id: quotas.id });
   if (!deleted) return res.status(404).json({ error: "Cota não encontrada" });
   return res.status(204).end();
 }));
@@ -131,12 +147,39 @@ stockRouter.post("/smart-search", asyncRoute(async (req, res) => {
     sql`${quotas.creditAmount} > 0`,
     sql`${quotas.creditAmount} <= ${input.data.targetCredit}::numeric * 1.02`];
   if (input.data.administrator) conditions.push(eq(quotas.administrator, input.data.administrator));
-  const candidates = await db.select().from(quotas).where(and(...conditions));
-  const result = await findSmartCombination(candidates, input.data);
+  const task = shareSmartWork(JSON.stringify(input.data), async () => {
+    const candidates = await db.select().from(quotas).where(and(...conditions));
+    return findSmartCombination(candidates, input.data);
+  });
+  if (!task) { res.setHeader("Retry-After", "2"); return res.status(429).json({ error: "Pedido Inteligente ocupado. Tente novamente em alguns segundos." }); }
+  const result = await task;
   const canSeeSupplier = ["admin", "administrative", "advisor"].includes(current.role);
   return res.json({ ...result, items: result.items.map(item => canSeeSupplier ? item : { ...item, supplier: null }) });
 }));
+stockRouter.get("/sync-fb/status", asyncRoute(async (req, res) => {
+  if (!(await requireUser(req, res, true))) return;
+  res.json({ ...fbSyncStatus(), ...await persistedFbStatus() });
+}));
 
+stockRouter.post("/sync-fb", asyncRoute(async (req, res) => {
+  if (!(await requireUser(req, res, true))) return;
+  try {
+    const result = await trackedFbSync("manual");
+    return res.json({ success: true, message: "Estoque da Fraga & Bitello sincronizado com sucesso.", ...result });
+  } catch (error) {
+    if (error instanceof FbSyncError) return res.status(error.status).json({ error: error.message });
+    throw error;
+  }
+}));
+stockRouter.post("/sync-fb/preview", asyncRoute(async (req, res) => {
+  if (!(await requireUser(req, res, true))) return;
+  try {
+    return res.json(await previewFbStockSync());
+  } catch (error) {
+    if (error instanceof FbSyncError) return res.status(error.status).json({ error: error.message });
+    throw error;
+  }
+}));
 stockRouter.post("/", asyncRoute(async (req, res) => {
   if (!(await requireUser(req, res, true))) return;
   const parsed = quotaInputSchema.safeParse(req.body);
@@ -160,7 +203,10 @@ stockRouter.patch("/:id", asyncRoute(async (req, res) => {
   if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Dados inválidos" });
   const db = getDatabase();
   if (!db) return res.status(503).json({ error: "Banco de dados não configurado" });
-  const [updated] = await db.update(quotas).set({ ...updateValues(parsed.data), updatedAt: new Date() }).where(eq(quotas.id, id.data)).returning();
-  if (!updated) return res.status(404).json({ error: "Cota não encontrada" });
+  const updated = await db.transaction(async tx => {
+    await lockStock(tx);
+    return (await tx.update(quotas).set({ ...updateValues(parsed.data), updatedAt: new Date() }).where(and(eq(quotas.id, id.data), sql`not ${committedQuota()}`)).returning())[0];
+  });
+  if (!updated) return res.status(409).json({ error: "Cota não encontrada ou vinculada a negociação. Cancele a negociação para liberar a cota." });
   return res.json({ quota: updated });
 }));

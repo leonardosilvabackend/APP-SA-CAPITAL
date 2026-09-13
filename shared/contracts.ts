@@ -1,3 +1,4 @@
+import { validTaxDocument } from "./tax-document";
 import { z } from "zod";
 
 export const healthResponseSchema = z.object({
@@ -20,15 +21,15 @@ export const dashboardMetricsSchema = z.object({
 
 export type DashboardMetrics = z.infer<typeof dashboardMetricsSchema>;
 
-export const preAnalysisStatusSchema = z.enum(["received", "pending", "approved", "rejected", "documents_requested"]);
+export const preAnalysisStatusSchema = z.enum(["draft", "received", "pending", "approved", "rejected", "documents_requested"]);
 export const createPreAnalysisSchema = z.object({
   customerType: z.enum(["PF", "PJ"]),
   customerName: z.string().trim().min(3, "Informe o nome do cliente").max(160),
   document: z.string().transform(value => value.replace(/\D/g, "")),
   incomeType: z.string().trim().min(2).max(60),
   consent: z.literal(true, { error: "O consentimento é obrigatório" }),
-  status: preAnalysisStatusSchema.default("received"),
-}).refine(data => data.document.length === (data.customerType === "PF" ? 11 : 14), { message: "Informe um CPF ou CNPJ válido", path: ["document"] });
+  status: z.literal("draft").default("draft"),
+}).refine(data => validTaxDocument(data.document, data.customerType), { message: "Informe um CPF ou CNPJ válido", path: ["document"] });
 export const updatePreAnalysisSchema = z.object({ status: preAnalysisStatusSchema, observations: z.string().trim().max(5000).optional(), administratorId: z.string().uuid().nullable().optional() });
 
 export const userRoleSchema = z.enum(["admin", "administrative", "advisor", "user"]);
@@ -54,7 +55,8 @@ export const setupAdminInputSchema = loginInputSchema.extend({
   name: z.string().trim().min(3, "Informe seu nome").max(160),
 });
 
-export const createUserInputSchema = setupAdminInputSchema.extend({
+export const DEFAULT_USER_PASSWORD = "@SA20262026";
+export const createUserInputSchema = setupAdminInputSchema.omit({ password: true }).extend({
   phone: z.string().trim().max(32).optional(),
   role: userRoleSchema.default("user"),
   managerId: z.string().uuid().nullable().optional(),

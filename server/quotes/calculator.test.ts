@@ -7,6 +7,11 @@ const quotas: CalculationQuota[] = [
 ];
 
 describe("cálculo de cotação", () => {
+  it("mantém a entrada original quando a comissão é zero", () => {
+    const result = calculateQuote(quotas, 0);
+    expect(result.commissionTotal).toBe(0);
+    expect(result.finalEntryTotal).toBe(result.baseEntryTotal);
+  });
   it("soma a comissão à entrada sem acréscimo adicional", () => {
     const result = calculateQuote(quotas, 3);
     expect(result.creditTotal).toBe(200000);

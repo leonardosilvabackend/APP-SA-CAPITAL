@@ -1,3 +1,4 @@
+import { ownershipScope } from "../auth/ownership";
 import { and, count, desc, eq, sql } from "drizzle-orm";
 import { Router, type NextFunction, type Request, type RequestHandler, type Response } from "express";
 import { getCurrentUser } from "../auth/current-user";
@@ -16,13 +17,13 @@ dashboardRouter.get("/metrics", asyncRoute(async (req, res) => {
   const db = getDatabase();
   if (!db) return res.status(503).json({ error: "Banco de dados não configurado" });
 
-  const quoteVisibility = user.role === "admin" ? undefined : eq(savedQuotes.creatorId, user.id);
+  const quoteVisibility = ownershipScope(savedQuotes.creatorId, user);
   const [stockResult, quoteResult, partnerResult, analysisResult, reservationResult] = await Promise.all([
     db.select({ availableQuotas: count(), availableCredit: sql<string>`coalesce(sum(${quotas.creditAmount}), 0)` }).from(quotas).where(eq(quotas.status, "available")),
     db.select({ savedQuotes: count() }).from(savedQuotes).where(quoteVisibility),
-    db.select({ activePartners: count() }).from(users).where(and(eq(users.role, "advisor"), eq(users.status, "active"))),
-    db.select({ value: count() }).from(preAnalyses),
-    db.select({ value: count() }).from(reservationRequests).where(eq(reservationRequests.status, "pending")),
+    db.select({ activePartners: count() }).from(users).where(and(user.role === "admin" ? eq(users.role, "advisor") : ownershipScope(users.id, user), eq(users.status, "active"))),
+    db.select({ value: count() }).from(preAnalyses).where(ownershipScope(preAnalyses.partnerId, user, true)),
+    db.select({ value: count() }).from(reservationRequests).where(and(eq(reservationRequests.status, "pending"), ownershipScope(reservationRequests.requesterId, user))),
   ]);
 
   return res.json({

@@ -1,11 +1,12 @@
 import { readFile } from "node:fs/promises";
 import postgres from "postgres";
 import { config } from "../config";
+import { assertProductionMigration } from "../environment";
 import { administratorInputSchema } from "../../shared/administrators";
 
 // Import only missing names; never overwrite information edited in the app.
 const normalize = (name: string) => name.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]/g, "").replace(/consorcios?/g, "");
-if (!config.databaseUrl) throw new Error("Banco não configurado");
+assertProductionMigration();
 const client = postgres(config.databaseUrl, { prepare: false, connect_timeout: 15 });
 try {
   const catalog = JSON.parse(await readFile(new URL("./catalog.json", import.meta.url), "utf8")).map((item: unknown) => administratorInputSchema.parse(item));

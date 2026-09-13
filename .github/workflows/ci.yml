@@ -1,0 +1,47 @@
+name: Validate SA Capital
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: sa_capital_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: ci-only-test-password
+        ports: ["5434:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres -d sa_capital_test"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: corepack enable
+      - run: pnpm install --frozen-lockfile
+      - name: Configure isolated test services
+        run: |
+          cat > .env.test <<'ENV'
+          APP_ENV=test
+          NODE_ENV=test
+          DATABASE_ENV=test
+          DATABASE_URL=postgresql://postgres:ci-only-test-password@127.0.0.1:5434/sa_capital_test
+          JWT_SECRET=ci-only-test-signing-key-at-least-32-characters
+          APP_URL=http://localhost:3000
+          EMAIL_ENABLED=false
+          ENABLE_SCHEDULED_JOBS=false
+          FB_SYNC_ENABLED=false
+          FB_SYNC_SCHEDULE_ENABLED=false
+          ENV
+      - run: npm run db:migrate:test
+      - run: npm run verify
+        env:
+          RUN_NEGOTIATION_DB_TESTS: "1"

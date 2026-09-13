@@ -1,15 +1,30 @@
+import { randomUUID } from "node:crypto";
+import { setTimeout as pause } from "node:timers/promises";
 import { config } from "./config";
 
 const RESEND_ENDPOINT = "https://api.resend.com/emails";
+async function sendWithRetry(options: RequestInit, key: string = randomUUID()) {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const response = await fetch(RESEND_ENDPOINT, { ...options, headers: { ...options.headers, "Idempotency-Key": key }, signal: AbortSignal.timeout(10_000) });
+      if (response.ok || response.status < 500 && response.status !== 429) return response;
+      if (attempt === 2) return response;
+    } catch { if (attempt === 2) throw new Error("Falha de conexao com o servico de email apos tres tentativas"); }
+    await pause(250 * 2 ** attempt);
+  }
+  throw new Error("Falha no envio de email");
+}
+
 
 function escapeHtml(value: string) {
   return value.replace(/[&<>'"]/g, character => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" })[character] ?? character);
 }
 
 export async function sendPasswordResetEmail(name: string, email: string, resetUrl: string) {
+  if (!config.emailEnabled) { console.log("[E-mail] Envio desabilitado neste ambiente."); return; }
   if (!config.resendApiKey || !config.resendFromEmail) throw new Error("Resend não configurado");
   const safeName = escapeHtml(name);
-  const response = await fetch(RESEND_ENDPOINT, {
+  const response = await sendWithRetry({
     method: "POST",
     headers: { Authorization: `Bearer ${config.resendApiKey}`, "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -23,8 +38,9 @@ export async function sendPasswordResetEmail(name: string, email: string, resetU
   if (!response.ok) throw new Error(`Resend respondeu com status ${response.status}`);
 }
 
-export async function sendStatusEmail(name: string, email: string, subject: string, message: string) {
-  if (!config.resendApiKey || !config.resendFromEmail) return;
-  const response = await fetch(RESEND_ENDPOINT, { method: "POST", headers: { Authorization: `Bearer ${config.resendApiKey}`, "Content-Type": "application/json" }, body: JSON.stringify({ from: config.resendFromEmail, to: email, subject: `SA Capital — ${subject}`, html: `<main style="font-family:Arial,sans-serif;color:#17243a;max-width:560px;margin:auto"><h1 style="color:#123458">${escapeHtml(subject)}</h1><p>Olá, ${escapeHtml(name)}.</p><p>${escapeHtml(message)}</p></main>`, text: `Olá, ${name}.\n\n${message}` }) });
-  if (!response.ok) console.error(`[E-mail] Resend respondeu com status ${response.status}`);
+export async function sendStatusEmail(name: string, email: string, subject: string, message: string, deliveryId?: string) {
+  if (!config.emailEnabled) { console.log("[E-mail] Envio desabilitado neste ambiente."); return; }
+  if (!config.resendApiKey || !config.resendFromEmail) throw new Error("Servico de email nao configurado");
+  const response = await sendWithRetry({ method: "POST", headers: { Authorization: `Bearer ${config.resendApiKey}`, "Content-Type": "application/json" }, body: JSON.stringify({ from: config.resendFromEmail, to: email, subject: `SA Capital — ${subject}`, html: `<main style="font-family:Arial,sans-serif;color:#17243a;max-width:560px;margin:auto"><h1 style="color:#123458">${escapeHtml(subject)}</h1><p>Olá, ${escapeHtml(name)}.</p><p>${escapeHtml(message)}</p></main>`, text: `Olá, ${name}.\n\n${message}` }) }, deliveryId);
+  if (!response.ok) throw new Error(`Servico de email respondeu com status ${response.status}`);
 }

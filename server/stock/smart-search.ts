@@ -2,13 +2,8 @@ import { setImmediate as yieldToServer } from "node:timers/promises";
 import type { CalculationQuota } from "../../shared/quote";
 import type { SmartSearchInput } from "../../shared/stock";
 
-// Database decimals are converted to integer cents before summing/comparing.
-export function moneyCents(value: string | number): bigint {
-  const text = typeof value === "number" ? value.toFixed(2) : value;
-  const match = /^(-?)(\d+)(?:\.(\d{1,2}))?$/.exec(text);
-  if (!match) throw new Error("Valor monetário inválido no estoque");
-  return (BigInt(match[2]) * 100n + BigInt((match[3] ?? "").padEnd(2, "0"))) * (match[1] ? -1n : 1n);
-}
+import { moneyCents } from "../../shared/money";
+export { moneyCents } from "../../shared/money";
 const abs = (value: bigint) => value < 0n ? -value : value;
 type Choice = { index: number; previous: Choice | null };
 type State = { index: number; credit: bigint; cost: bigint; count: number; choice: Choice | null };
