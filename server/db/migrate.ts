@@ -23,7 +23,12 @@ try {
     await client`create table drizzle.__drizzle_migrations (id serial primary key, hash text not null, created_at bigint)`;
   }
   const [last] = await client`select created_at from drizzle.__drizzle_migrations order by created_at desc limit 1`;
-  const [storage] = await client`select to_regclass('storage.buckets') is not null as available`;
+  const [storage] = await client`
+    select exists (
+      select 1 from information_schema.tables
+      where table_schema = 'storage' and table_name = 'buckets'
+    ) as available
+  `;
   for (const migration of readMigrationFiles({ migrationsFolder: "drizzle" })) {
     if (last && Number(last.created_at) >= migration.folderMillis) continue;
     // Commit enum additions before a later migration uses the new values.
