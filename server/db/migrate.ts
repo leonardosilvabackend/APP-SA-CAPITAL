@@ -14,8 +14,14 @@ try {
     if (identity.current_user !== migrationRole) throw new Error("Nao foi possivel assumir SA_MIGRATION_ROLE.");
   }
   await client`select pg_advisory_lock(7365, 2)`;
-  await client`create schema if not exists drizzle`;
-  await client`create table if not exists drizzle.__drizzle_migrations (id serial primary key, hash text not null, created_at bigint)`;
+  const [migrationTable] = await client`select to_regclass('drizzle.__drizzle_migrations') is not null as available`;
+  if (environment.production && !migrationTable.available) {
+    throw new Error("Historico de migrations de producao nao encontrado.");
+  }
+  if (!migrationTable.available) {
+    await client`create schema if not exists drizzle`;
+    await client`create table drizzle.__drizzle_migrations (id serial primary key, hash text not null, created_at bigint)`;
+  }
   const [last] = await client`select created_at from drizzle.__drizzle_migrations order by created_at desc limit 1`;
   const [storage] = await client`select to_regclass('storage.buckets') is not null as available`;
   for (const migration of readMigrationFiles({ migrationsFolder: "drizzle" })) {
