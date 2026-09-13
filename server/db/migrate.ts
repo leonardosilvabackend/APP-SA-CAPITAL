@@ -1,12 +1,18 @@
 import postgres from "postgres";
 import { readMigrationFiles } from "drizzle-orm/migrator";
-import { assertProductionMigration, environment, validateEnvironment } from "../environment";
+import { assertProductionMigration, environment, validateEnvironment, validateMigrationRole } from "../environment";
 
 assertProductionMigration();
 const url = process.env.SA_MIGRATION_DATABASE_URL ?? process.env.DATABASE_URL!;
 validateEnvironment({ ...process.env, DATABASE_URL: url }, true);
+const migrationRole = validateMigrationRole(process.env, environment.production);
 const client = postgres(url, { prepare: false, max: 1, onnotice: () => undefined });
 try {
+  if (migrationRole) {
+    await client.unsafe(`set role "${migrationRole}"`);
+    const [identity] = await client`select current_user`;
+    if (identity.current_user !== migrationRole) throw new Error("Nao foi possivel assumir SA_MIGRATION_ROLE.");
+  }
   await client`select pg_advisory_lock(7365, 2)`;
   await client`create schema if not exists drizzle`;
   await client`create table if not exists drizzle.__drizzle_migrations (id serial primary key, hash text not null, created_at bigint)`;

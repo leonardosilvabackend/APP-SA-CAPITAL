@@ -17,6 +17,8 @@ O commit da RC deve conter todas as alterações rastreadas e todos os arquivos 
 
 O runner consulta `drizzle.__drizzle_migrations` e aplica somente arquivos posteriores ao último registro, um por transação, sob advisory lock. Confirmar no banco de produção quais já foram aplicados. Candidatas desta RC:
 
+Consulta somente leitura em 12/09/2026 confirmou produção aplicada até `0007_sharp_namor.sql`. O próximo pre-deploy deve aplicar exatamente `0008`–`0012`.
+
 1. `0007_sharp_namor.sql`: adiciona `quotas.external_id`.
 2. `0008_clever_moon_knight.sql`: cria auditoria imutável, histórico FB, fila de limpeza e índices; instala trigger que bloqueia UPDATE/DELETE da auditoria.
 3. `0009_gigantic_moira_mactaggert.sql`: adiciona origem da reserva e classifica reservas existentes como `manual`.
@@ -30,11 +32,15 @@ Antes da migration: backup consistente, contagem de tabelas, espaço disponível
 
 Obrigatórias no runtime: `APP_ENV=production`, `NODE_ENV=production`, `DATABASE_ENV=production`, `DATABASE_URL` do usuário restrito, `JWT_SECRET` exclusivo com 32+ caracteres, `APP_URL` HTTPS, `TRUST_PROXY_HOPS` conforme a topologia real, `EMAIL_ENABLED`, `ENABLE_SCHEDULED_JOBS`, `FB_SYNC_ENABLED`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_STORAGE_BUCKET`, `RESEND_API_KEY`, `RESEND_FROM_EMAIL`. `PORT` é fornecida pelo Railway.
 
-Somente no pre-deploy: `SA_MIGRATION_DATABASE_URL` do migrator e `CONFIRM_PRODUCTION_MIGRATIONS=apply-production-migrations`. Railway fornece `RAILWAY_ENVIRONMENT_ID`, `RAILWAY_SERVICE_ID` e `RAILWAY_DEPLOYMENT_ID`. Não é necessário `SUPABASE_ANON_KEY` para o runtime atual. Manter `FB_SYNC_ENABLED=false` nesta RC.
+Somente no pre-deploy: `SA_MIGRATION_DATABASE_URL` do migrator, `SA_MIGRATION_ROLE=sa_capital_owner` e `CONFIRM_PRODUCTION_MIGRATIONS=apply-production-migrations`. Railway fornece `RAILWAY_ENVIRONMENT_ID`, `RAILWAY_SERVICE_ID` e `RAILWAY_DEPLOYMENT_ID`. Não é necessário `SUPABASE_ANON_KEY` para o runtime atual. Manter `FB_SYNC_ENABLED=false` nesta RC.
+
+Em 13/09/2026 foram criados em produção `sa_capital_owner`, `sa_capital_migrator` e `sa_capital_runtime`. Os 16 objetos existentes de `public` e `drizzle` foram transferidos ao owner em uma transação, e as duas novas credenciais autenticaram pelo pooler. O papel legado permanece temporariamente membro do owner para manter a versão publicada operacional. Não trocar `DATABASE_URL` nem retirar o legado antes de aplicar as migrations, executar os grants finais e aprovar o smoke test.
 
 ## Backup e restauração
 
 Usar snapshot/PITR do PostgreSQL antes da migration e exportação independente verificada. Registrar responsável, horário, retenção, RPO e RTO. Inventariar objetos do bucket e confirmar versionamento/backup do Storage. Testar restauração em banco e bucket isolados; comparar contagens e amostras. O backup local da FASE 1 não comprova recuperação de produção.
+
+O dump de produção `backup-producao-pre-deploy.dump`, formato custom, foi validado por `pg_restore --list` e restaurado em PostgreSQL 18.6 local isolado em 13/09/2026. A restauração confirmou `public` e `drizzle`, 13 tabelas públicas, 147 constraints, 30 índices e 8 registros de migration. As contagens de todas as 13 tabelas coincidiram com produção no momento da comparação; o banco e a credencial temporários foram removidos. Esta evidência cobre o banco da aplicação, mas não substitui snapshot/PITR nem backup e restauração dos objetos do Storage.
 
 ## Storage e e-mail
 

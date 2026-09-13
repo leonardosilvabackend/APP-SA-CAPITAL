@@ -41,7 +41,7 @@ if (selected !== "production") {
   loadDotenv({ path: `.env.${selected}`, processEnv: local, quiet: true });
   if (local.APP_ENV && local.APP_ENV !== selected) throw new Error("APP_ENV incompatível com o ambiente solicitado.");
   if (local.NODE_ENV && local.NODE_ENV !== (selected === "test" ? "test" : "development")) throw new Error("NODE_ENV incompatível no arquivo local.");
-  const keys = ["DATABASE_URL", "DATABASE_ENV", "JWT_SECRET", "APP_URL", "PORT", "SUPABASE_URL", "SUPABASE_ANON_KEY", "SUPABASE_SERVICE_ROLE_KEY", "SUPABASE_BUCKET", "SUPABASE_STORAGE_BUCKET", "RESEND_API_KEY", "RESEND_FROM_EMAIL", "EMAIL_ENABLED", "ENABLE_SCHEDULED_JOBS", "FB_SYNC_ENABLED", "FB_SYNC_SCHEDULE_ENABLED"];
+  const keys = ["DATABASE_URL", "DATABASE_ENV", "SA_MIGRATION_ROLE", "JWT_SECRET", "APP_URL", "PORT", "SUPABASE_URL", "SUPABASE_ANON_KEY", "SUPABASE_SERVICE_ROLE_KEY", "SUPABASE_BUCKET", "SUPABASE_STORAGE_BUCKET", "RESEND_API_KEY", "RESEND_FROM_EMAIL", "EMAIL_ENABLED", "ENABLE_SCHEDULED_JOBS", "FB_SYNC_ENABLED", "FB_SYNC_SCHEDULE_ENABLED"];
   keys.push("FB_SYNC_INTERVAL_MINUTES", "TRUST_PROXY_HOPS");
   for (const key of keys) {
     delete process.env[key];
@@ -52,6 +52,12 @@ if (selected !== "production") {
 export const environment = validateEnvironment(process.env);
 
 export function assertDatabaseSafety() { validateEnvironment(process.env, true); }
+export function validateMigrationRole(env: Env, production: boolean) {
+  const role = env.SA_MIGRATION_ROLE;
+  if (production && !role) throw new Error("Migration de producao exige SA_MIGRATION_ROLE.");
+  if (role && !/^[a-z_][a-z0-9_]{0,62}$/.test(role)) throw new Error("SA_MIGRATION_ROLE invalido.");
+  return role;
+}
 export function assertProductionMigration() {
   assertDatabaseSafety();
   if (environment.production && process.env.CONFIRM_PRODUCTION_MIGRATIONS !== "apply-production-migrations") {
