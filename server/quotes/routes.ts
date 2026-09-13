@@ -82,6 +82,14 @@ quotesRouter.post("/saved/:id/opportunity", asyncRoute(async (req, res) => {
   const [item] = await db.update(savedQuotes).set({ opportunityActive: true, opportunityReason: parsed.data.reason }).where(condition).returning();
   return res.json({ item });
 }));
+quotesRouter.delete("/saved/:id/opportunity", asyncRoute(async (req, res) => {
+  const user = await current(req, res); if (!user) return;
+  if (!["admin", "advisor"].includes(user.role)) return res.status(403).json({ error: "Somente administrador e assessor podem excluir oportunidades" });
+  const condition = and(eq(savedQuotes.id, req.params.id), eq(savedQuotes.opportunityActive, true), quoteScope(user));
+  const [item] = await getDatabase()!.update(savedQuotes).set({ opportunityActive: false, opportunityReason: null }).where(condition).returning({ id: savedQuotes.id });
+  if (!item) return res.status(404).json({ error: "Oportunidade não encontrada" });
+  return res.status(204).end();
+}));
 quotesRouter.get("/saved/:id",asyncRoute(async(req,res)=>{const user=await current(req,res);if(!user)return;const db=getDatabase()!;const scope=quoteScope(user);const condition=scope?and(eq(savedQuotes.id,req.params.id),scope):eq(savedQuotes.id,req.params.id);const [row]=await db.select({id:savedQuotes.id,clientName:savedQuotes.clientName,creatorId:savedQuotes.creatorId,creatorName:users.name,selectedQuotas:savedQuotes.selectedQuotas,commissionRate:savedQuotes.commissionRate,createdAt:savedQuotes.createdAt,expiresAt:savedQuotes.expiresAt}).from(savedQuotes).innerJoin(users,eq(savedQuotes.creatorId,users.id)).where(condition).limit(1);if(!row)return res.status(404).json({error:"Cotação não encontrada"});const [reservation]=await db.select().from(reservationRequests).where(eq(reservationRequests.quoteId,row.id)).orderBy(desc(reservationRequests.createdAt)).limit(1);const rate=Number(row.commissionRate);return res.json({item:{...row,warnings:await stockWarnings(row.selectedQuotas),quotas:row.selectedQuotas,summary:calculateQuote(row.selectedQuotas,rate),commercialText:commercialQuoteText(row.selectedQuotas,rate),reservation:reservation??null}});}));
 quotesRouter.patch("/saved/:id", asyncRoute(async (req, res) => {
   const user = await current(req, res); if (!user) return;

@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowDown, ArrowUp, ArrowUpDown, ChevronLeft, ChevronRight, Pencil, Plus, Search, Star, Upload } from "lucide-react";
 import { useEffect, useState } from "react";
 import { type StockSort } from "@shared/stock-sort";
@@ -15,6 +15,7 @@ import StockSmartSearchModal from "./stock/SmartSearchModal";
 import { stockApi, stockCurrency as currency, type Opportunity, type QuotaRecord, type StockFilters, type StockResponse } from "./stock/contracts";
 
 export default function StockPage({ user }: { user: AuthenticatedUser }) {
+  const queryClient = useQueryClient();
   const [sort, setSort] = useState<StockSort>("default");
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
@@ -33,9 +34,11 @@ export default function StockPage({ user }: { user: AuthenticatedUser }) {
   const stock = useQuery<StockResponse>({ refetchInterval: 30_000, queryKey: ["stock", page, pageSize, search, category, administrator, status, sort], queryFn: () => stockApi(`?${params}`) });
   const filters = useQuery<StockFilters>({ queryKey: ["stock-filters"], queryFn: () => stockApi("/filters") });
   const opportunities = useQuery<{ items: Opportunity[] }>({ queryKey: ["opportunities"], queryFn: async () => { const response = await fetch("/api/quotes/opportunities"); if (!response.ok) throw new Error("Não foi possível carregar oportunidades"); return response.json(); }, refetchInterval: 30_000 });
+  const removeOpportunity = useMutation({ mutationFn: async (id: string) => { const response = await fetch(`/api/quotes/saved/${id}/opportunity`, { method: "DELETE", credentials: "same-origin" }); if (!response.ok) { const data = await response.json().catch(() => ({})); throw new Error(data.error ?? "Não foi possível excluir a oportunidade"); } return id; }, onSuccess: () => { void queryClient.invalidateQueries({ queryKey: ["opportunities"] }); toast.success("Oportunidade excluída"); }, onError: error => toast.error(error.message) });
   const selectionSummary = useQuery<QuoteResponse>({ queryKey: ["selection-credit", selectedIds], queryFn: async () => { const response = await fetch("/api/quotes/calculate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ quotaIds: selectedIds, commissionRate: 0 }) }); if (!response.ok) throw new Error("Não foi possível calcular o crédito selecionado"); return response.json(); }, enabled: selectedIds.length > 0, retry: false });
   const settings = useQuery<{ settings: { legalNotice: string } }>({ queryKey: ["settings"], queryFn: async () => { const response = await fetch("/api/settings"); if (!response.ok) throw new Error("Configurações indisponíveis"); return response.json(); } });
   const isAdmin = ["admin", "administrative"].includes(user.role);
+  const canManageOpportunities = ["admin", "advisor"].includes(user.role);
   useEffect(() => {
     const codes = search.split(/[\s,;]+/).map(value => value.trim().toLowerCase()).filter(Boolean);
     if (codes.length < 2 || !stock.data) return;
@@ -75,7 +78,7 @@ export default function StockPage({ user }: { user: AuthenticatedUser }) {
     {selectedIds.length > 0 && <div className="selection-bar"><div><strong>{selectedIds.length} cota{selectedIds.length === 1 ? "" : "s"} selecionada{selectedIds.length === 1 ? "" : "s"}</strong><span className="selection-credit">Crédito {selectedIds.length > 1 ? "total " : ""}{currency(selectedCredit)}</span></div><button className="secondary-button" onClick={() => { setSelectedIds([]); setSearch(""); setPage(1); sessionStorage.removeItem("sa-capital-selected-quotas"); }}>Limpar</button><button className="primary-button button-reset" onClick={() => setQuoting(true)}>Ver cotação <ChevronRight size={18} /></button></div>}
     {quoting && <QuotePanel ids={selectedIds} onClose={() => setQuoting(false)} />}
     {smartSearching && <StockSmartSearchModal filters={filters.data} onClose={() => setSmartSearching(false)} onUse={ids => { setSelectedIds(ids); sessionStorage.setItem("sa-capital-selected-quotas", JSON.stringify(ids)); setSmartSearching(false); setQuoting(true); }} />}
-    {showOpportunities && <StockOpportunitiesModal items={opportunities.data?.items ?? []} onClose={() => setShowOpportunities(false)} onChoose={ids => { setSelectedIds(ids); sessionStorage.setItem("sa-capital-selected-quotas", JSON.stringify(ids)); setShowOpportunities(false); setQuoting(true); }} />}
+    {showOpportunities && <StockOpportunitiesModal items={opportunities.data?.items ?? []} canDelete={canManageOpportunities} deletingId={removeOpportunity.isPending ? removeOpportunity.variables : undefined} onDelete={id => { if (window.confirm("Excluir esta oportunidade? A cotação salva será mantida.")) removeOpportunity.mutate(id); }} onClose={() => setShowOpportunities(false)} onChoose={ids => { setSelectedIds(ids); sessionStorage.setItem("sa-capital-selected-quotas", JSON.stringify(ids)); setShowOpportunities(false); setQuoting(true); }} />}
     {creating && <QuotaFormModal onClose={() => setCreating(false)} />}{editing && <QuotaFormModal quota={editing} onClose={() => setEditing(null)} />}{importing && <StockImportModal onClose={() => setImporting(false)} />}
     <footer className="legal-notice">{settings.data?.settings.legalNotice ?? "A SA CAPITAL se isenta de qualquer responsabilidade sobre alteração de valores, fica a responsabilidade do parceiro verificar junto ao seu assessor os valores atualizados antes de qualquer negociação."}</footer>
   </section>;
