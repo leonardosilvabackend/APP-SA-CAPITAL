@@ -74,6 +74,7 @@ Mantenha credenciais reais somente nas variáveis do serviço Railway:
 - `EMAIL_ENABLED=true` para manter e-mails reais.
 - `ENABLE_SCHEDULED_JOBS=true` para manter limpezas e importação inicial de reservas que antes eram automáticas.
 - `FB_SYNC_ENABLED=false` até a aprovação da funcionalidade; depois `true` permite a sincronização manual.
+- `FB_SYNC_SCHEDULE_ENABLED=true` habilita explicitamente a sincronização automática no ambiente atual. O intervalo é definido por `FB_SYNC_INTERVAL_MINUTES` (30 por padrão). Mantenha a flag ausente ou `false` quando o agendador não deve executar.
 - Troque o pré-deploy antigo `pnpm db:migrate` por `pnpm db:migrate:prod`.
 - Configure `SA_MIGRATION_ROLE=sa_capital_owner` e `CONFIRM_PRODUCTION_MIGRATIONS=apply-production-migrations` na etapa de migrations. Se o Railway só disponibilizar variáveis no serviço inteiro, essa confirmação ficará válida para todo o serviço; restrinja quem pode executar comandos nele.
 - Confirme que `RAILWAY_ENVIRONMENT_ID`, `RAILWAY_SERVICE_ID` e `RAILWAY_DEPLOYMENT_ID` estão disponíveis na etapa de migration e no runtime. São exigidos sem fallback. Não invente valores localmente.

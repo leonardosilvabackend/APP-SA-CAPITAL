@@ -7,7 +7,7 @@ export const config = {
   databaseEnv: process.env.DATABASE_ENV ?? "não configurado",
   emailEnabled: environment.production && process.env.EMAIL_ENABLED !== "false",
   scheduledJobsEnabled: process.env.ENABLE_SCHEDULED_JOBS === "true",
-  fbSyncScheduleEnabled: environment.appEnv === "test" && process.env.FB_SYNC_SCHEDULE_ENABLED === "true",
+  fbSyncScheduleEnabled: process.env.FB_SYNC_SCHEDULE_ENABLED === "true",
   fbSyncIntervalMinutes: Number(process.env.FB_SYNC_INTERVAL_MINUTES ?? 30),
   fbSyncEnabled: process.env.FB_SYNC_ENABLED === "true",
   isProduction: process.env.NODE_ENV === "production",
