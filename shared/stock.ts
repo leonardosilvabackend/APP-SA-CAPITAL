@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { normalizeAdministratorName } from "./administrator-name";
 
 function parseBrazilianNumber(value: unknown) {
   if (typeof value === "number") return value;
@@ -31,7 +32,7 @@ export type SmartSearchInput = z.infer<typeof smartSearchInputSchema>;
 export const quotaInputSchema = z.object({
   code: z.string().trim().min(1, "Informe o código").max(80),
   category: z.string().trim().min(1, "Informe a categoria").max(80).transform(normalizeQuotaCategory),
-  administrator: z.string().trim().min(1, "Informe a administradora").max(160),
+  administrator: z.string().trim().min(1, "Informe a administradora").max(160).transform(normalizeAdministratorName),
   supplier: z.string().trim().max(160).optional().nullable().transform(value => value || null),
   creditAmount: positiveMoney,
   entryAmount: positiveMoney,

@@ -4,6 +4,7 @@ import { z } from "zod";
 import { getDatabase } from "../db/client";
 import { quotas } from "../db/schema";
 import { config } from "../config";
+import { normalizeAdministratorName } from "../../shared/administrator-name";
 
 const FB_API_URL = "https://fragaebitelloconsorcios.com.br/api/json/contemplados";
 export const FB_SUPPLIER = "Fraga & Bitello";
@@ -74,7 +75,7 @@ export function normalizeFbStockResponse(data: unknown): FbNormalizedItem[] {
     const originalInstallment = cents(item.valor_parcela);
     const installment = originalInstallment + 170n;
     return {
-      externalId: item.id, category: item.categoria, administrator: item.administradora,
+      externalId: item.id, category: item.categoria, administrator: normalizeAdministratorName(item.administradora),
       originalCredit: money(originalCredit), credit: money(credit),
       originalEntry: money(originalEntry), entry: money(entry),
       installments: item.parcelas, originalInstallmentValue: money(originalInstallment),
