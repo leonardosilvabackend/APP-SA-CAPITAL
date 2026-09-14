@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { quotaInputSchema, validateImportRows } from "../../shared/stock";
 
 describe("validação de estoque", () => {
-  const valid = { code: "A-123", category: "Imóvel", administrator: "Administradora", creditAmount: "R$ 150.000,00", entryAmount: "30.000,00", installmentCount: "120", installmentAmount: "1.250,50", outstandingBalance: "120.000,00" };
+  const valid = { code: "A-123", category: "Imóvel", administrator: "Administradora", supplier: "Fornecedor SA", creditAmount: "R$ 150.000,00", entryAmount: "30.000,00", installmentCount: "120", installmentAmount: "1.250,50", outstandingBalance: "120.000,00" };
   it("converte valores brasileiros", () => {
     const parsed = quotaInputSchema.parse(valid);
     expect(parsed.creditAmount).toBe(150000);
@@ -13,5 +13,8 @@ describe("validação de estoque", () => {
     const rows = validateImportRows([valid, { ...valid, code: "a-123" }]);
     expect(rows[0].valid).toBe(true);
     expect(rows[1].valid).toBe(false);
+  });
+  it.each([["imóveis", "Imóvel"], ["IMOVEL", "Imóvel"], ["veículos", "Veículo"], ["VEICULO", "Veículo"]])("normaliza a categoria %s", (category, expected) => {
+    expect(quotaInputSchema.parse({ ...valid, category }).category).toBe(expected);
   });
 });

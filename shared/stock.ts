@@ -11,6 +11,13 @@ function parseBrazilianNumber(value: unknown) {
 const positiveMoney = z.preprocess(parseBrazilianNumber, z.number().finite().nonnegative("O valor não pode ser negativo"));
 const positiveInteger = z.preprocess(value => typeof value === "string" ? Number(value.trim()) : value, z.number().int().positive("Informe uma quantidade válida"));
 
+export function normalizeQuotaCategory(value: string) {
+  const normalized = value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLocaleLowerCase("pt-BR");
+  if (["imovel", "imoveis"].includes(normalized)) return "Imóvel";
+  if (["veiculo", "veiculos"].includes(normalized)) return "Veículo";
+  return value.trim();
+}
+
 export const quotaStatusSchema = z.enum(["available", "reserved"]);
 
 export const smartSearchInputSchema = z.object({
@@ -23,7 +30,7 @@ export type SmartSearchInput = z.infer<typeof smartSearchInputSchema>;
 
 export const quotaInputSchema = z.object({
   code: z.string().trim().min(1, "Informe o código").max(80),
-  category: z.string().trim().min(1, "Informe a categoria").max(80),
+  category: z.string().trim().min(1, "Informe a categoria").max(80).transform(normalizeQuotaCategory),
   administrator: z.string().trim().min(1, "Informe a administradora").max(160),
   supplier: z.string().trim().max(160).optional().nullable().transform(value => value || null),
   creditAmount: positiveMoney,
