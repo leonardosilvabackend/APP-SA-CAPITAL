@@ -14,6 +14,7 @@ import { findSmartCombination } from "./smart-search";
 import { FbSyncError, previewFbStockSync, syncFbStock } from "./fb-sync";
 import { FB_SUPPLIER } from "./fb-sync";
 import { saImportSourceKey, saImportValues } from "./sa-import";
+import * as XLSX from "xlsx";
 
 export const stockRouter = Router();
 
@@ -107,6 +108,34 @@ stockRouter.get("/filters", asyncRoute(async (req, res) => {
     db.selectDistinct({ value: quotas.administrator }).from(quotas).where(visibility).orderBy(asc(quotas.administrator)),
   ]);
   return res.json({ categories: categories.map(item => item.value), administrators: administrators.map(item => item.value) });
+}));
+
+stockRouter.get("/export-sa", asyncRoute(async (req, res) => {
+  if (!(await requireStockImporter(req, res))) return;
+  const rows = await getDatabase()!.select().from(quotas).where(or(sql`${quotas.supplier} is null`, sql`${quotas.supplier} <> ${FB_SUPPLIER}`)).orderBy(asc(quotas.code));
+  const sheet = XLSX.utils.json_to_sheet(rows.map(item => ({
+    "ID interno": item.id,
+    "Cód.Cota original": item.externalId ?? item.code,
+    "Código SA": item.code,
+    Categoria: item.category,
+    Crédito: Number(item.creditAmount),
+    Entrada: Number(item.entryAmount),
+    "NºParcelas": item.installmentCount,
+    VlrParcela: Number(item.installmentAmount),
+    Saldodevedor: Number(item.outstandingBalance),
+    Administradora: item.administrator,
+    Fornecedor: item.supplier ?? "",
+    Situação: item.status,
+    "Origem da reserva": item.reservationOrigin ?? "",
+    Destaque: item.featured ? "Sim" : "Não",
+    "Criada em": item.createdAt,
+    "Atualizada em": item.updatedAt,
+  })));
+  const workbook = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(workbook, sheet, "Estoque SA");
+  const file = XLSX.write(workbook, { type: "buffer", bookType: "xlsx" });
+  res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+  res.setHeader("Content-Disposition", `attachment; filename="estoque-sa-${new Date().toISOString().slice(0, 10)}.xlsx"`);
+  return res.send(file);
 }));
 
 stockRouter.post("/import/preview", asyncRoute(async (req, res) => {

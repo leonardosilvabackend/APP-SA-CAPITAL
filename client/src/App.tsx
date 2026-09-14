@@ -16,6 +16,7 @@ import {
   Users,
   WalletCards,
   Upload,
+  Download,
   X,
 } from "lucide-react";
 import { useState, type ReactNode } from "react";
@@ -32,6 +33,7 @@ import NegotiationsPage from "./pages/NegotiationsPage";
 import FbSyncStatus from "./pages/FbSyncStatus";
 import AuditPage from "./pages/AuditPage";
 import StockImportModal from "./pages/stock/StockImportModal";
+import { downloadSaStock } from "./pages/stock/contracts";
 import { toast } from "sonner";
 import { selectionSurface } from "./lib/selectionSurface";
 
@@ -102,6 +104,7 @@ function Dashboard({ user }: { user: AuthenticatedUser }) {
   const [, navigate] = useLocation();
   const queryClient = useQueryClient();
   const [importingStock, setImportingStock] = useState(false);
+  const exportStock = useMutation({ mutationFn: downloadSaStock, onError: error => toast.error(error.message) });
   const showInternalDashboard = user.role !== "user";
   const health = useQuery<HealthResponse>({
     queryKey: ["health"],
@@ -141,7 +144,7 @@ function Dashboard({ user }: { user: AuthenticatedUser }) {
   return <>
     <section className="hero">
       <div><span className="eyebrow">{user.role === "admin" ? "PAINEL ADMINISTRATIVO" : "PAINEL DO PARCEIRO"}</span><h1>Olá, {user.name.split(" ")[0]}</h1><p>Acompanhe a operação comercial da SA Capital em um só lugar.</p></div>
-      <div className="heading-actions">{["admin", "advisor"].includes(user.role) && <button className="secondary-button" onClick={() => setImportingStock(true)}><Upload size={17} /> Importar estoque SA</button>}<Link href="/estoque" className="primary-button">Consultar estoque <ChevronRight size={18} /></Link></div>
+      <div className="heading-actions">{["admin", "advisor"].includes(user.role) && <><button className="secondary-button" disabled={exportStock.isPending} onClick={() => exportStock.mutate()}><Download size={17} /> {exportStock.isPending ? "Gerando…" : "Baixar estoque SA"}</button><button className="secondary-button" onClick={() => setImportingStock(true)}><Upload size={17} /> Importar estoque SA</button></>}<Link href="/estoque" className="primary-button">Consultar estoque <ChevronRight size={18} /></Link></div>
     </section>
     <section className="metrics-grid">
       {cards.map(card => <article className="metric-card" key={card.label}><div className={`metric-icon ${card.tone}`}><card.icon size={21} /></div><span>{card.label}</span><strong>{card.value}</strong><small>{metrics.isError ? "Indicador temporariamente indisponível" : card.detail}</small></article>)}
