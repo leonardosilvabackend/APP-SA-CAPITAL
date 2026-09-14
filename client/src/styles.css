@@ -1224,6 +1224,7 @@ main { max-width: 1560px; padding: 42px 46px 72px; }
 .administrator-logo { display: grid; place-items: center; width: 54px; height: 40px; padding: 4px; overflow: hidden; border: 1px solid #e3e8ef; border-radius: 9px; background: #fff; }
 .administrator-logo img { display: block; width: 100%; height: 100%; object-fit: contain; }.administrator-logo-fallback { color: #17427a; font-size: 12px; font-weight: 800; background: #edf3f9; }
 .quote-list-row > .administrator-logo { width: 44px; height: 44px; }
+.detail-quota-main { min-width: 0; }.quote-quota-flag { display: inline-flex; width: fit-content; margin-top: 7px; padding: 4px 8px; border-radius: 999px; font-size: 10px; font-style: normal; font-weight: 800; }.quote-quota-flag.reserved { color: #8b651c; background: #fff4d9; }.quote-quota-flag.sold { color: #78505d; background: #f5eaf0; }.quote-quota-flag.unavailable { color: #8a3e3e; background: #fbeaea; }
 .opportunity-button { position: relative; display: inline-flex; align-items: center; gap: 7px; overflow: hidden; padding: 10px 15px; border: 0; border-radius: 9px; color: #fff; background: linear-gradient(135deg, #071f42, #164f91); font-weight: 800; cursor: pointer; box-shadow: 0 9px 22px rgb(7 31 66 / 25%); }
 .opportunity-button::after, .opportunity-reason::after { content: ""; position: absolute; inset: -70% auto -70% -35%; width: 28%; transform: rotate(18deg); background: rgb(255 255 255 / 38%); animation: opportunity-shine 2.8s infinite; }
 @keyframes opportunity-shine { 0%, 40% { left: -35%; } 70%, 100% { left: 120%; } }
