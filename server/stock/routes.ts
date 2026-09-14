@@ -12,6 +12,8 @@ import { getDatabase } from "../db/client";
 import { quotas } from "../db/schema";
 import { findSmartCombination } from "./smart-search";
 import { FbSyncError, previewFbStockSync, syncFbStock } from "./fb-sync";
+import { FB_SUPPLIER } from "./fb-sync";
+import { saImportSourceKey, saImportValues } from "./sa-import";
 
 export const stockRouter = Router();
 
@@ -23,6 +25,14 @@ async function requireUser(req: Request, res: Response, adminOnly = false) {
   const current = await getCurrentUser(req);
   if (!current) { res.status(401).json({ error: "Faça login para continuar" }); return null; }
   if (adminOnly && !["admin", "administrative"].includes(current.role)) { res.status(403).json({ error: "Acesso exclusivo para a equipe administrativa" }); return null; }
+  return current;
+}
+
+export function canImportStock(role: string) { return ["admin", "advisor"].includes(role); }
+async function requireStockImporter(req: Request, res: Response) {
+  const current = await requireUser(req, res);
+  if (!current) return null;
+  if (!canImportStock(current.role)) { res.status(403).json({ error: "Somente administrador e assessor podem importar o estoque SA" }); return null; }
   return current;
 }
 
@@ -41,7 +51,7 @@ function updateValues(data: Partial<QuotaInput>) {
   return { ...data, ...(data.status ? { reservationOrigin: data.status === "reserved" ? "manual" : null } : {}), creditAmount: data.creditAmount === undefined ? undefined : moneyNumber(moneyCents(data.creditAmount)).toFixed(2), entryAmount: data.entryAmount === undefined ? undefined : moneyNumber(moneyCents(data.entryAmount)).toFixed(2), installmentAmount: data.installmentAmount === undefined ? undefined : moneyNumber(moneyCents(data.installmentAmount)).toFixed(2), outstandingBalance: data.outstandingBalance === undefined ? undefined : moneyNumber(moneyCents(data.outstandingBalance)).toFixed(2) };
 }
 
-stockRouter.use("/import", asyncRoute(async (req, res, next) => { if (await requireUser(req, res, true)) next(); }), express.json({ limit: "10mb" }));
+stockRouter.use("/import", asyncRoute(async (req, res, next) => { if (await requireStockImporter(req, res)) next(); }), express.json({ limit: "10mb" }));
 stockRouter.use(express.json({ limit: "2mb" }));
 
 stockRouter.get("/", asyncRoute(async (req, res) => {
@@ -104,6 +114,7 @@ stockRouter.post("/import/preview", asyncRoute(async (req, res) => {
   const input = quotaImportSchema.safeParse(req.body);
   if (!input.success) return res.status(400).json({ error: input.error.issues[0]?.message ?? "Planilha inválida" });
   const results = validateImportRows(input.data.rows);
+  for (const row of results) if (row.valid && row.data.supplier === FB_SUPPLIER) return res.status(400).json({ error: "Cotas da Fraga & Bitello devem ser atualizadas pela API FB" });
   return res.json({ rows: results, valid: results.filter(row => row.valid).length, invalid: results.filter(row => !row.valid).length });
 }));
 
@@ -113,21 +124,47 @@ stockRouter.post("/import/commit", asyncRoute(async (req, res) => {
   if (!input.success) return res.status(400).json({ error: input.error.issues[0]?.message ?? "Planilha inválida" });
   const results = validateImportRows(input.data.rows);
   if (results.some(row => !row.valid)) return res.status(400).json({ error: "Corrija as linhas inválidas antes de importar", rows: results });
-  const validRows = results.flatMap(row => row.valid ? [insertValues(row.data)] : []);
+  const validRows = results.flatMap(row => row.valid ? [saImportValues(row.data)] : []);
+  if (validRows.some(row => row.supplier === FB_SUPPLIER)) return res.status(400).json({ error: "Cotas da Fraga & Bitello devem ser atualizadas pela API FB" });
   const db = getDatabase();
   if (!db) return res.status(503).json({ error: "Banco de dados não configurado" });
-  await db.transaction(async tx => {
+  const summary = await db.transaction(async tx => {
     await lockStock(tx);
     // Repair active links before replacing: imports must never release an active negotiation.
     await tx.update(quotas).set({ status: "reserved", reservationOrigin: "negotiation" }).where(and(committedQuota(), sql`${quotas.status} <> 'sold'`));
-    if (input.data.mode === "replace") await tx.delete(quotas).where(and(sql`${quotas.status} = 'available'`, sql`${quotas.externalId} is null`, sql`not ${committedQuota()}`, sql`${quotas.code} not in (${sql.join(validRows.map(row => sql`${row.code}`), sql`, `)})`));
-  for (let offset = 0; offset < validRows.length; offset += 100) await tx.insert(quotas).values(validRows.slice(offset, offset + 100)).onConflictDoUpdate({
-    target: quotas.code,
-    setWhere: and(eq(quotas.status, "available"), sql`${quotas.externalId} is null`, sql`not ${committedQuota()}`),
-    set: { category: sql`excluded.category`, administrator: sql`excluded.administrator`, supplier: sql`excluded.supplier`, creditAmount: sql`excluded.credit_amount`, entryAmount: sql`excluded.entry_amount`, installmentCount: sql`excluded.installment_count`, installmentAmount: sql`excluded.installment_amount`, outstandingBalance: sql`excluded.outstanding_balance`, status: sql`excluded.status`, reservationOrigin: sql`excluded.reservation_origin`, featured: sql`excluded.featured`, updatedAt: new Date() },
+    const local = await tx.select({ id: quotas.id, code: quotas.code, externalId: quotas.externalId, supplier: quotas.supplier, status: quotas.status, protected: sql<boolean>`${committedQuota()}` }).from(quotas);
+    const imported = new Map<string, typeof local[number]>();
+    for (const item of local) if (item.externalId && item.supplier !== FB_SUPPLIER) {
+      const key = saImportSourceKey(item.supplier, item.externalId);
+      if (imported.has(key)) throw new Error(`Referência de origem duplicada no estoque: ${item.externalId}`);
+      imported.set(key, item);
+    }
+    const incomingKeys = new Set(validRows.map(row => saImportSourceKey(row.supplier, row.sourceCode)));
+    const incomingLegacyCodes = new Set(validRows.map(row => row.sourceCode.trim().toLocaleLowerCase("pt-BR")));
+    const legacyByCode = new Map(local.filter(item => item.supplier !== FB_SUPPLIER && !item.externalId).map(item => [item.code.toLocaleLowerCase("pt-BR"), item]));
+    if (input.data.mode === "replace") {
+      const removable = local.filter(item => item.supplier !== FB_SUPPLIER && item.status === "available" && !item.protected && (item.externalId ? !incomingKeys.has(saImportSourceKey(item.supplier, item.externalId)) : !incomingLegacyCodes.has(item.code.toLocaleLowerCase("pt-BR"))));
+      for (let offset = 0; offset < removable.length; offset += 500) await tx.delete(quotas).where(inArray(quotas.id, removable.slice(offset, offset + 500).map(item => item.id)));
+    }
+    const sixDigitCodes = local.map(item => item.code).filter(code => /^\d{6}$/.test(code));
+    let nextCode = sixDigitCodes.reduce((largest, code) => Math.max(largest, Number(code)), sixDigitCodes.length ? 0 : 99999);
+    const creates: (ReturnType<typeof insertValues> & { externalId: string })[] = [];
+    let updated = 0, protectedCount = 0;
+    for (const row of validRows) {
+      const existing = imported.get(saImportSourceKey(row.supplier, row.sourceCode)) ?? legacyByCode.get(row.sourceCode.toLocaleLowerCase("pt-BR"));
+      const { sourceCode, code: _sourceCodeField, ...values } = row;
+      if (existing) {
+        if (existing.protected || existing.status !== "available") { protectedCount++; continue; }
+        await tx.update(quotas).set({ ...values, externalId: sourceCode, updatedAt: new Date() }).where(and(eq(quotas.id, existing.id), eq(quotas.status, "available"), sql`not ${committedQuota()}`));
+        updated++; continue;
+      }
+      if (++nextCode > 999999) throw new Error("A sequência de códigos SA ultrapassou 999999");
+      creates.push({ ...values, code: String(nextCode).padStart(6, "0"), externalId: sourceCode });
+    }
+    for (let offset = 0; offset < creates.length; offset += 100) await tx.insert(quotas).values(creates.slice(offset, offset + 100));
+    return { created: creates.length, updated, protected: protectedCount };
   });
-  });
-  return res.json({ imported: validRows.length });
+  return res.json({ imported: validRows.length, ...summary });
 }));
 
 stockRouter.delete("/:id", asyncRoute(async (req, res) => {
