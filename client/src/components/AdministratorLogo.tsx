@@ -8,8 +8,12 @@ const files: Record<string, string> = {
   tradicao: "LOGO TRADICAO.png", "uniao catarinense": "LOGO UNIAO CATARINENSE.png", unicoob: "logo UNICOOB.png", volkswagen: "LOGO VOLKSWAGEM.png",
   yamaha: "LOGO YAMAHA.png", zema: "LOGO ZEMA.png", racon: "LOGO RACON.png",
 };
+export function administratorLogoPath(name: string) {
+  const file = files[administratorKey(normalizeAdministratorName(name))];
+  return file ? `/administrator-logos/LOGO/${encodeURIComponent(file)}` : null;
+}
 export default function AdministratorLogo({ name }: { name: string }) {
-  const canonical = normalizeAdministratorName(name), file = files[administratorKey(canonical)];
-  if (!file) return <span className="administrator-logo administrator-logo-fallback" aria-label={canonical}>{canonical.slice(0, 2).toUpperCase()}</span>;
-  return <span className="administrator-logo"><img src={`/administrator-logos/LOGO/${encodeURIComponent(file)}`} alt={`Logo ${canonical}`} /></span>;
+  const canonical = normalizeAdministratorName(name), path = administratorLogoPath(canonical);
+  if (!path) return <span className="administrator-logo administrator-logo-fallback" aria-label={canonical}>{canonical.slice(0, 2).toUpperCase()}</span>;
+  return <span className="administrator-logo"><img src={path} alt={`Logo ${canonical}`} /></span>;
 }

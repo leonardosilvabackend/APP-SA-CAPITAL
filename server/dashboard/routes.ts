@@ -27,7 +27,7 @@ dashboardRouter.get("/metrics", asyncRoute(async (req, res) => {
   ]);
 
   return res.json({
-    availableQuotas: stockResult[0]?.availableQuotas ?? 0,
+    ...(user.role !== "user" ? { availableQuotas: stockResult[0]?.availableQuotas ?? 0 } : {}),
     availableCredit: Number(stockResult[0]?.availableCredit ?? 0),
     savedQuotes: quoteResult[0]?.savedQuotes ?? 0,
     activePartners: partnerResult[0]?.activePartners ?? 0,

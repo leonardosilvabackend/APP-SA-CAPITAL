@@ -1205,7 +1205,13 @@ main { max-width: 1560px; padding: 42px 46px 72px; }
 .stock-column-sort:focus-visible { outline: 2px solid #245edb; outline-offset: 3px; border-radius: 3px; }
 .stock-installment-sorts { display: flex; flex-wrap: wrap; gap: 6px 14px; }
 .stock-page .smart-order-button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; background: linear-gradient(125deg, #183b82, #326bff); box-shadow: 0 4px 14px rgb(36 94 219 / 22%); }
-.smart-order-modal { max-height: calc(100dvh - 44px); }
+.smart-order-modal { width: min(100%, 1180px); max-height: calc(100dvh - 44px); }
+.smart-order-results { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; margin-top: 20px; }
+.smart-order-results .smart-order-result { display: flex; flex-direction: column; gap: 10px; margin-top: 0; min-width: 0; border: 1px solid #dbe6f3; background: linear-gradient(160deg, #f7faff, #eef4fc); }
+.smart-order-result > strong { color: #17375e; line-height: 1.5; }
+.smart-order-result > button { margin-top: auto; }
+.smart-order-quota-list { max-height: 240px; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
+.smart-order-quota-list:focus-visible { outline: 2px solid #326bff; outline-offset: 3px; border-radius: 6px; }
 .smart-order-modal .eyebrow { display: inline-flex; align-items: center; gap: 7px; }
 .smart-order-fields { min-width: 0; padding: 0; border: 0; }
 .smart-order-range { font-size: 13px; }
@@ -1222,6 +1228,58 @@ main { max-width: 1560px; padding: 42px 46px 72px; }
 .stock-filters .filter-active, .stock-filters label.filter-active input { color: #fff; border-color: #183f75; background: linear-gradient(135deg, #17375f, #225da8); }
 .stock-filters label.filter-active svg { color: #fff; }.stock-filters .filter-active::placeholder { color: #dbeafe; }
 .administrator-logo { display: grid; place-items: center; width: 68px; height: 46px; padding: 0; overflow: visible; border: 0; border-radius: 0; background: transparent; }
+.stock-advisor-row { display: flex; justify-content: flex-end; margin-bottom: 18px; }
+.advisor-contact { display: flex; align-items: center; gap: 16px; max-width: 100%; padding: 14px 20px 14px 14px; border: 1px solid #dce6f3; border-radius: 20px; background: linear-gradient(120deg, #fff, #f1f6fd); box-shadow: 0 5px 20px rgb(20 51 96 / 6%); }
+.advisor-portrait { display: grid; place-items: center; flex: none; width: 64px; height: 64px; overflow: hidden; border: 3px solid #fff; border-radius: 50%; outline: 1px solid #ccdcef; background: #e6eef8; color: #16447c; font-weight: 800; }
+.advisor-portrait img { width: 100%; height: 100%; object-fit: cover; }
+.advisor-contact strong, .advisor-contact small, .advisor-contact a, .advisor-contact span { display: block; overflow-wrap: anywhere; }
+.advisor-contact small, .advisor-contact span { font-size: 12px; color: #65758c; }
+.advisor-details { min-width: 0; }
+.advisor-details > small { margin-bottom: 5px; text-transform: uppercase; font-size: 10px; font-weight: 700; letter-spacing: .08em; }
+.advisor-details > strong { color: #17375e; font-size: 15px; line-height: 1.4; }
+.advisor-contact .advisor-details > a { display: inline-flex; align-items: center; gap: 7px; margin-top: 7px; color: #194e8c; font-size: 13px; text-decoration: none; }
+.advisor-details > a:hover { text-decoration: underline; }
+.checklist-panel, .profile-contact-panel { padding: 24px; margin-top: 20px; }
+.checklist-page > h1 { margin: 10px 0; font-size: 32px; font-weight: 750; color: #14264b; }
+.checklist-page > p { color: #65758c; max-width: 780px; }
+.checklist-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px; margin-top: 26px; }
+.checklist-card { display: flex; flex-direction: column; min-width: 0; overflow: hidden; }
+.checklist-card > header { display: flex; align-items: center; gap: 14px; padding: 22px; border-bottom: 1px solid #edf1f7; background: linear-gradient(120deg, #f8faff, #fff); }
+.checklist-card-icon { display: grid; place-items: center; flex: none; width: 48px; height: 48px; border-radius: 14px; color: #245696; background: #eaf1fb; }
+.checklist-card header small { color: #738198; font-size: 11px; }
+.checklist-card h2 { margin: 5px 0 0; color: #19385b; font-size: 17px; line-height: 1.4; }
+.checklist-documents { flex: 1; padding: 14px 22px 22px; }
+.checklist-card .checklist-item { align-items: flex-start; padding: 7px 0; color: #4b5e76; font-size: 13px; line-height: 1.6; }
+.checklist-card .checklist-item input { flex: none; width: 16px; height: 16px; margin-top: 3px; accent-color: #245696; }
+.checklist-card > footer { padding: 16px 22px; border-top: 1px solid #edf1f7; }
+.checklist-card footer button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; width: 100%; }
+.checklist-guidance { margin-top: 24px; font-size: 12px; line-height: 1.7; }
+.checklist-panel select, .profile-contact-panel input:not([type="file"]) { min-height: 44px; padding: 10px 12px; border: 1px solid #dce5f0; border-radius: 8px; background: #fff; }
+.checklist-panel > label:first-child { display: grid; gap: 8px; max-width: 420px; }
+.checklist-panel h2 { margin: 24px 0 16px; }
+.checklist-item { display: flex; align-items: center; gap: 12px; margin-top: 8px; }
+.checklist-panel > p { margin: 22px 0; color: #65758c; }
+.profile-contact-panel form { display: grid; gap: 16px; margin-top: 18px; max-width: 520px; }
+.profile-contact-panel label { display: grid; gap: 8px; }
+.quote-balance { border-top: 1px solid #dce6f1; padding-top: 14px; margin-top: 10px; }
+.promo-card-modal { padding: 20px; border-radius: 16px; background: #fff; width: min(100%, 460px); max-height: 92dvh; overflow: auto; }
+.promo-card-preview { display: block; width: 100%; max-height: 65dvh; object-fit: contain; margin: 16px 0; }
+.promo-card-modal > .primary-button { display: flex; justify-content: center; }
+.user-search { display: grid; gap: 7px; margin-top: 22px; color: #405168; font-size: 12px; font-weight: 700; }
+.user-search input { width: min(100%, 600px); min-height: 44px; padding: 10px 14px; border: 1px solid #dce5f0; border-radius: 10px; background: #fff; }
+.smart-result-flags { display: flex; flex-wrap: wrap; gap: 6px; }
+.smart-result-flags > span { padding: 5px 9px; border-radius: 999px; color: #23538e; background: #e1ecfc; font-weight: 700; }
+.checklist-edit-actions { display: flex; gap: 8px; margin-top: 10px; }
+.income-type-editor { width: min(100%, 650px); }
+.income-type-editor fieldset { display: grid; gap: 16px; padding: 0; border: 0; margin: 22px 0; }
+.income-type-editor label { display: grid; gap: 8px; color: #405168; font-size: 13px; font-weight: 700; }
+.income-type-editor input, .income-type-editor textarea, .income-type-editor select, .promo-format select { padding: 11px; border: 1px solid #dce5f0; border-radius: 9px; background: #fff; }
+.income-type-editor textarea { min-height: 180px; }
+.promo-card-modal { width: min(100%, 600px); }
+.promo-designs { display: flex; flex-wrap: wrap; gap: 8px; margin: 20px 0; }
+.promo-designs button[aria-pressed="true"] { color: #fff; border-color: #173e79; background: linear-gradient(125deg, #173e79, #325e9f); }
+.promo-format { display: grid; gap: 7px; color: #405168; font-size: 13px; }
+@media (max-width: 640px) { .stock-advisor-row { justify-content: flex-start; } .advisor-contact { width: 100%; padding: 14px; } .smart-order-results, .checklist-grid { grid-template-columns: minmax(0, 1fr); } .smart-order-modal { padding: 20px; } .quote-actions { flex-wrap: wrap; } .quote-actions > button { flex: 1 1 150px; } }
 .administrator-logo img { display: block; width: 100%; height: 100%; object-fit: contain; filter: drop-shadow(0 2px 3px rgb(17 40 69 / 12%)); }.administrator-logo-fallback { width: 46px; color: #17427a; font-size: 12px; font-weight: 800; }
 .quote-list-row > .administrator-logo { width: 56px; height: 42px; }
 .detail-quota-main { min-width: 0; }.quote-quota-flag { display: inline-flex; width: fit-content; margin-top: 7px; padding: 4px 8px; border-radius: 999px; font-size: 10px; font-style: normal; font-weight: 800; }.quote-quota-flag.reserved { color: #8b651c; background: #fff4d9; }.quote-quota-flag.sold { color: #78505d; background: #f5eaf0; }.quote-quota-flag.unavailable { color: #8a3e3e; background: #fbeaea; }

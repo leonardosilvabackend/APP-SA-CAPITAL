@@ -26,6 +26,7 @@ export const smartSearchInputSchema = z.object({
   category: z.string().trim().min(1, "Selecione a categoria").max(80),
   targetCredit: z.number().finite().positive("Informe o crédito desejado").max(999999999999.99).multipleOf(0.01, "Informe o crédito com até duas casas decimais"),
   priority: z.enum(["entry", "installment", "balance"], { error: "Selecione o critério decisor" }),
+  secondaryAmount: z.number().finite().nonnegative("Informe um orçamento válido").max(999999999999.99).multipleOf(0.01).optional(),
 });
 export type SmartSearchInput = z.infer<typeof smartSearchInputSchema>;
 

@@ -10,7 +10,7 @@ export class AnalysisError extends Error {
 }
 export async function validateSubmission(tx: AnalysisTransaction, item: typeof preAnalyses.$inferSelect) {
   const [settings] = await tx.select().from(appSettings).where(eq(appSettings.id, "default"));
-  const required = (settings?.incomeDocuments ?? defaultIncomeDocuments)[item.incomeType];
+  const required = item.requiredDocumentsSnapshot ?? (settings?.incomeDocuments ?? defaultIncomeDocuments)[item.incomeType];
   if (!required?.length) throw new AnalysisError(400, "Tipo de renda não configurado.");
   const documents = await tx.select().from(preAnalysisDocuments).where(eq(preAnalysisDocuments.preAnalysisId, item.id));
   const missing = required.filter(type => !documents.some(doc => doc.documentType === type && doc.size > 0 && (!doc.expiresAt || doc.expiresAt > new Date())));

@@ -32,6 +32,8 @@ import { AdministradorasPage } from "./pages/AdministradorasPage";
 import NegotiationsPage from "./pages/NegotiationsPage";
 import FbSyncStatus from "./pages/FbSyncStatus";
 import AuditPage from "./pages/AuditPage";
+import ChecklistPage from "./pages/ChecklistPage";
+import ProfileContact from "./pages/ProfileContact";
 import StockImportModal from "./pages/stock/StockImportModal";
 import { downloadSaStock } from "./pages/stock/contracts";
 import { toast } from "sonner";
@@ -45,6 +47,7 @@ const navigation = [
   { href: "/negociacoes", label: "Negociações", icon: WalletCards, roles: ["admin", "administrative", "advisor", "user"] },
   { href: "/administradoras", label: "Administradoras", icon: Building2, roles: ["admin", "administrative", "advisor", "user"] },
   { href: "/pre-analises", label: "Pré-análises", icon: FileSearch, roles: ["admin", "administrative", "advisor", "user"] },
+  { href: "/check-list", label: "Check-list", icon: FileSearch, roles: ["admin", "administrative", "advisor", "user"] },
   { href: "/usuarios", label: "Usuários", icon: Users, roles: ["admin", "advisor"] },
   { href: "/auditoria", label: "Auditoria", icon: ScrollText, roles: ["admin"] },
   { href: "/perfil", label: "Perfil", icon: CircleUser, roles: ["admin", "administrative", "advisor", "user"] },
@@ -131,7 +134,7 @@ function Dashboard({ user }: { user: AuthenticatedUser }) {
   const currency = (value?: number) => metrics.isLoading ? "…" : new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 }).format(value ?? 0);
 
   const cards = [
-    { label: "Cotas disponíveis", value: integer(metrics.data?.availableQuotas), detail: "Condições prontas para cotação", icon: PackageSearch, tone: "blue" },
+    ...(showInternalDashboard ? [{ label: "Cotas disponíveis", value: integer(metrics.data?.availableQuotas), detail: "Condições prontas para cotação", icon: PackageSearch, tone: "blue" }] : []),
     { label: "Cotações salvas", value: integer(metrics.data?.savedQuotes), detail: user.role === "admin" ? "Histórico de toda a equipe" : "Seu histórico de cotações", icon: WalletCards, tone: "gold" },
     ...(showInternalDashboard ? [{ label: "Parceiros ativos", value: integer(metrics.data?.activePartners), detail: "Acessos ativos na plataforma", icon: Users, tone: "green" }] : []),
     { label: "Volume disponível", value: currency(metrics.data?.availableCredit), detail: "Crédito total em estoque", icon: BarChart3, tone: "navy" },
@@ -254,7 +257,7 @@ function App() {
   {() => (
     <AdministradorasPage isAdmin={me.data!.role === "admin"} />
   )}
-</Route><Route path="/pre-analises">{() => <PreAnalysesPage user={me.data!} />}</Route><Route path="/usuarios">{() => ["admin", "advisor"].includes(me.data!.role) ? <UsersPage currentUser={me.data!} /> : <StockPage user={me.data!} />}</Route><Route path="/perfil">{() => <ChangePasswordPage user={me.data!} onChanged={user => queryClient.setQueryData(["current-user"], user)} />}</Route><Route path="/configuracoes">{() => <SettingsPage user={me.data!} onChanged={user => queryClient.setQueryData(["current-user"], user)} />}</Route>{Object.keys(pageContent).filter(path => !["/estoque", "/cotacoes", "/pre-analises", "/usuarios", "/configuracoes"].includes(path)).map(path => <Route key={path} path={path}>{() => <ModulePage path={path} />}</Route>)}<Route><StockPage user={me.data!} /></Route></Switch></AppShell>;
+</Route><Route path="/check-list">{() => <ChecklistPage user={me.data!} />}</Route><Route path="/pre-analises">{() => <PreAnalysesPage user={me.data!} />}</Route><Route path="/usuarios">{() => ["admin", "advisor"].includes(me.data!.role) ? <UsersPage currentUser={me.data!} /> : <StockPage user={me.data!} />}</Route><Route path="/perfil">{() => <><ProfileContact user={me.data!} /><ChangePasswordPage user={me.data!} onChanged={user => queryClient.setQueryData(["current-user"], user)} /></>}</Route><Route path="/configuracoes">{() => <SettingsPage user={me.data!} onChanged={user => queryClient.setQueryData(["current-user"], user)} />}</Route>{Object.keys(pageContent).filter(path => !["/estoque", "/cotacoes", "/pre-analises", "/usuarios", "/configuracoes"].includes(path)).map(path => <Route key={path} path={path}>{() => <ModulePage path={path} />}</Route>)}<Route><StockPage user={me.data!} /></Route></Switch></AppShell>;
 }
 
 export default App;

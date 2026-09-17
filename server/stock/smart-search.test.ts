@@ -43,7 +43,7 @@ it("adds the specific administrator filter", async () => {
 it("returns no opportunity without falling back to out-of-range stock", async () => {
   state.query.mockResolvedValue([]);
   const response = await request();
-  expect(await response.json()).toEqual({ items: [], summary: null, complete: true, priority: "entry" });
+  expect(await response.json()).toEqual({ items: [], summary: null, complete: true, priority: "entry", options: [] });
   expect(state.query).toHaveBeenCalledOnce();
 });
 it("requires a criterion, category and positive finite numeric credit", () => {
@@ -59,6 +59,8 @@ it("rejects invalid requests before querying stock", async () => {
 it("preserves supplier visibility restrictions", async () => {
   state.user = { role: "user" };
   expect((await (await request()).json()).items[0].supplier).toBeNull();
+  const result = await (await request({ ...input, secondaryAmount: 2000 })).json();
+  expect(result.options.every((option: { items: { supplier: unknown }[] }) => option.items.every(item => item.supplier === null))).toBe(true);
   state.user = { role: "advisor" };
   expect((await (await request()).json()).items[0].supplier).toBe("Privado");
 });

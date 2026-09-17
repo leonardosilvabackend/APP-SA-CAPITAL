@@ -180,6 +180,7 @@ export const preAnalyses = pgTable("pre_analyses", {
   customerName: varchar("customer_name", { length: 160 }).notNull(),
   document: varchar("document", { length: 30 }).notNull(),
   incomeType: varchar("income_type", { length: 60 }).notNull().default("Autônomo"),
+  requiredDocumentsSnapshot: jsonb("required_documents_snapshot").$type<string[]>(),
   status: varchar("status", { length: 40 }).notNull().default("received"),
   observations: text("observations"),
   administratorId: uuid("administrator_id").references(() => users.id, { onDelete: "set null" }),
@@ -221,5 +222,6 @@ export const appSettings = pgTable("app_settings", {
   maxFileSizeMb: integer("max_file_size_mb").notNull().default(10),
   allowedFileTypes: jsonb("allowed_file_types").$type<string[]>().notNull().default(["application/pdf", "image/jpeg", "image/png"]),
   incomeDocuments: jsonb("income_documents").$type<Record<string, string[]>>().notNull(),
+  incomeTypes: jsonb("income_types").$type<Record<string,"PF"|"PJ">>(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });

@@ -26,7 +26,7 @@
     "verify": "npm run test -- --no-cache && npm run build",
     "db:bootstrap:test": "node --import tsx scripts/run.mjs test bootstrap",
     "db:bootstrap:dev": "node --import tsx scripts/run.mjs development bootstrap",
-    "test:e2e": "node scripts/e2e-test.mjs"
+    "test:e2e": "node --import tsx scripts/e2e-test.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",

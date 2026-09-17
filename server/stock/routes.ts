@@ -10,7 +10,7 @@ import { quotaImportSchema, quotaInputSchema, quotaStatusSchema, quotaUpdateSche
 import { getCurrentUser } from "../auth/current-user";
 import { getDatabase } from "../db/client";
 import { quotas } from "../db/schema";
-import { findSmartCombination } from "./smart-search";
+import { findSmartOptions } from "./smart-options";
 import { FbSyncError, previewFbStockSync, syncFbStock } from "./fb-sync";
 import { FB_SUPPLIER } from "./fb-sync";
 import { saImportSourceKey, saImportValues } from "./sa-import";
@@ -112,7 +112,8 @@ stockRouter.get("/filters", asyncRoute(async (req, res) => {
 
 stockRouter.get("/export-sa", asyncRoute(async (req, res) => {
   if (!(await requireStockImporter(req, res))) return;
-  const rows = await getDatabase()!.select().from(quotas).where(or(sql`${quotas.supplier} is null`, sql`${quotas.supplier} <> ${FB_SUPPLIER}`)).orderBy(asc(quotas.code));
+  // The download uses persisted FB values; it never calls/reprices the API.
+  const rows = await getDatabase()!.select().from(quotas).orderBy(asc(quotas.code));
   const sheet = XLSX.utils.json_to_sheet(rows.map(item => ({
     "ID interno": item.id,
     "Cód.Cota original": item.externalId ?? item.code,
@@ -215,12 +216,13 @@ stockRouter.post("/smart-search", asyncRoute(async (req, res) => {
   if (input.data.administrator) conditions.push(eq(quotas.administrator, input.data.administrator));
   const task = shareSmartWork(JSON.stringify(input.data), async () => {
     const candidates = await db.select().from(quotas).where(and(...conditions));
-    return findSmartCombination(candidates, input.data);
+    return findSmartOptions(candidates, input.data);
   });
   if (!task) { res.setHeader("Retry-After", "2"); return res.status(429).json({ error: "Pedido Inteligente ocupado. Tente novamente em alguns segundos." }); }
   const result = await task;
   const canSeeSupplier = ["admin", "administrative", "advisor"].includes(current.role);
-  return res.json({ ...result, items: result.items.map(item => canSeeSupplier ? item : { ...item, supplier: null }) });
+  const visible = (item: typeof quotas.$inferSelect) => canSeeSupplier ? item : { ...item, supplier: null };
+  return res.json({ ...result, items: result.items.map(visible), options: result.options.map(option => ({ ...option, items: option.items.map(visible) })) });
 }));
 stockRouter.get("/sync-fb/status", asyncRoute(async (req, res) => {
   if (!(await requireUser(req, res, true))) return;
