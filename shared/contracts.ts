@@ -11,7 +11,7 @@ export const healthResponseSchema = z.object({
 export type HealthResponse = z.infer<typeof healthResponseSchema>;
 
 export const dashboardMetricsSchema = z.object({
-  availableQuotas: z.number(),
+  availableQuotas: z.number().optional(),
   availableCredit: z.number(),
   savedQuotes: z.number(),
   activePartners: z.number(),

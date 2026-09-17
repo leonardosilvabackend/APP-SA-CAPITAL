@@ -1,0 +1,14 @@
+import express from "express";
+import type { Server } from "node:http";
+import { getTableName } from "drizzle-orm";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
+const state = vi.hoisted(() => ({ role: "user" as string | null }));
+vi.mock("../auth/current-user", () => ({ getCurrentUser: async () => state.role ? { id: "123e4567-e89b-42d3-a456-426614174000", role: state.role } : null }));
+vi.mock("../db/client", () => ({ getDatabase: () => ({ select: () => ({ from: (table: any) => ({ where: async () => getTableName(table) === "quotas" ? [{ availableQuotas: 42, availableCredit: "100000" }] : [{ savedQuotes: 2, activePartners: 1, value: 0 }] }) }) }) }));
+import { dashboardRouter } from "./routes";
+let server: Server, base: string;
+beforeEach(async () => { state.role = "user"; const app = express(); app.use("/api/dashboard", dashboardRouter); server = await new Promise<Server>(resolve => { const instance = app.listen(0, "127.0.0.1", () => resolve(instance)); }); base = `http://127.0.0.1:${(server.address() as { port: number }).port}/api/dashboard/metrics`; });
+afterEach(async () => { server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve())); });
+it("omits the available stock quantity from the user response", async () => { expect(await (await fetch(base)).json()).not.toHaveProperty("availableQuotas"); });
+it.each(["admin", "advisor"])("retains stock quantity for %s", async role => { state.role = role; expect((await (await fetch(base)).json()).availableQuotas).toBe(42); });
+it("requires authentication", async () => { state.role = null; expect((await fetch(base)).status).toBe(401); });

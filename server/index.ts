@@ -23,6 +23,7 @@ import { negotiationsRouter } from "./negotiations/routes";
 import { backfillNegotiations } from "./negotiations/service";
 import { cleanupExpiredNotifications, notificationsRouter } from "./notifications/routes";
 import { auditRouter } from "./audit/routes";
+import { profileRouter } from "./profile/routes";
 
 assertDatabaseSafety();
 if (config.jwtSecret.length < 32) throw new Error("JWT_SECRET deve possuir ao menos 32 caracteres");
@@ -36,6 +37,7 @@ app.set("trust proxy", config.trustProxyHops);
 app.use("/api/administrators", administratorsRouter);
 app.use("/api/negotiations", negotiationsRouter);
 app.use("/api/stock", stockRouter);
+app.use("/api/profile", profileRouter);
 app.use(express.json({ limit: "2mb" }));
 app.use("/api/auth", authRouter);
 app.use("/api/users", usersRouter);

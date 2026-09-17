@@ -27,6 +27,7 @@ async function userApi(path = "", options?: RequestInit) {
 
 export default function UsersPage({ currentUser }: { currentUser: AuthenticatedUser }) {
   const queryClient = useQueryClient();
+  const [search,setSearch] = useState("");
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [confirmation, setConfirmation] = useState<{ title: string; description: string; action: () => void; destructive?: boolean } | null>(null);
@@ -99,8 +100,11 @@ export default function UsersPage({ currentUser }: { currentUser: AuthenticatedU
     } else action();
   }
 
-  const records = usersQuery.data ?? [];
-  const selected = records.find(user => user.id === selectedId);
+  const allRecords = usersQuery.data ?? [];
+  const normalize = (value:string)=>value.normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase();
+  const needle=normalize(search.trim());
+  const records = allRecords.filter(user=>normalize(`${user.name} ${user.email} ${user.phone ?? ""}`).includes(needle) || (search.replace(/\D/g,"").length>=3 && (user.phone ?? "").replace(/\D/g,"").includes(search.replace(/\D/g,""))));
+  const selected = allRecords.find(user => user.id === selectedId);
   return <section className="users-page">
     <div className="page-heading-row">
       <div><span className="eyebrow">ADMINISTRAÇÃO</span><h1>Usuários</h1><p>Cadastre usuários e controle os acessos à plataforma.</p></div>
@@ -114,13 +118,14 @@ export default function UsersPage({ currentUser }: { currentUser: AuthenticatedU
         <label>E-mail<input type="email" value={form.email} onChange={event => setForm({ ...form, email: event.target.value })} required /></label>
         <label>Telefone<input value={form.phone} onChange={event => setForm({ ...form, phone: event.target.value })} /></label>
         <label>Perfil<select value={form.role} disabled={currentUser.role === "advisor" || editingId === currentUser.id} onChange={event => setForm({ ...form, role: event.target.value, managerId: event.target.value === "user" ? form.managerId : "" })}><option value="user">Usuário</option>{currentUser.role === "admin" && <><option value="advisor">Assessor</option><option value="administrative">Administrativo</option><option value="admin">Administrador</option></>}</select></label>
-        {currentUser.role === "admin" && form.role === "user" && <label>Assessor responsável<select value={form.managerId} onChange={event => setForm({ ...form, managerId: event.target.value })}><option value="">Sem assessor</option>{records.filter(item => item.role === "advisor").map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>}
+        {currentUser.role === "admin" && form.role === "user" && <label>Assessor responsável<select value={form.managerId} onChange={event => setForm({ ...form, managerId: event.target.value })}><option value="">Sem assessor</option>{allRecords.filter(item => item.role === "advisor").map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>}
         {!editingId && <label>Senha inicial<input type="text" value={DEFAULT_USER_PASSWORD} readOnly minLength={8} autoComplete="new-password" required /></label>}
       </fieldset>
       {createUser.error && <div className="auth-error" role="alert">{createUser.error.message}</div>}
       <div className="form-actions"><button type="button" className="secondary-button" disabled={busy} onClick={() => setShowForm(false)}>Cancelar</button><button className="primary-button button-reset" disabled={busy}>{busy ? "Salvando…" : editingId ? "Salvar alterações" : "Criar usuário"}</button></div>
     </form>}
 
+    <label className="user-search">Pesquisar usuários<input type="search" placeholder="Nome, e-mail ou telefone" value={search} onChange={e=>setSearch(e.target.value)} /></label>
     <div className="user-summary">
       <span><Users size={18} /> {records.length} usuário{records.length === 1 ? "" : "s"}</span>
       <span><UserCheck size={18} /> {records.filter(user => user.status === "active").length} ativo{records.filter(user => user.status === "active").length === 1 ? "" : "s"}</span>
