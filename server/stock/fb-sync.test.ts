@@ -16,11 +16,14 @@ afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers(); });
 
 describe("FB normalization", () => {
   it("applies the commercial adjustments using rounded cents", () => {
-    expect(normalized()).toMatchObject({ externalId: "7288", originalCredit: 34805, credit: 34801.52, originalEntry: 15400, entry: 16096.03, originalInstallmentValue: 1787, installmentValue: 1788.7, installments: 15, outstandingBalance: 26830.5, status: "available" });
+    expect(normalized()).toMatchObject({ externalId: "7288", originalCredit: 34805, credit: 34770.20, originalEntry: 15400, entry: 16095.40, originalInstallmentValue: 1787, installmentValue: 1788.7, installments: 15, outstandingBalance: 26830.5, status: "available" });
   });
   it("uses adjusted credit for entry and handles half-cent rounding", () => {
-    expect(normalized({ valor_credito: "50.00", entrada_sem_comissao: 0 })).toMatchObject({ credit: 50, entry: 1 });
-    expect(normalized({ valor_credito: "150.00", entrada_sem_comissao: 0 })).toMatchObject({ credit: 149.99, entry: 3 });
+    expect(normalized({ valor_credito: "50.00", entrada_sem_comissao: 0 })).toMatchObject({ credit: 49.95, entry: 1 });
+    expect(normalized({ valor_credito: "150.00", entrada_sem_comissao: 0 })).toMatchObject({ credit: 149.85, entry: 3 });
+  });
+  it("deducts 0.1 percent from credit and uses two percent for the FB entry", () => {
+    expect(normalized({ valor_credito: "100000.00", entrada_sem_comissao: "10000.00", valor_parcela: "1000.00", parcelas: 48 })).toMatchObject({ credit: 99900, entry: 11998, installmentValue: 1001.7, outstandingBalance: 48081.6 });
   });
   it("distinguishes Reservar from Reservado", () => {
     expect(normalized({ reserva: "Reservado" }).status).toBe("reserved");
@@ -121,7 +124,7 @@ describe("FB preview and sync isolation", () => {
     const before = structuredClone(fixture.rows());
     const result = await previewFbStockSync();
     expect(result).toMatchObject({ received: 1, wouldCreate: 1, wouldUpdate: 0, wouldReserve: 0, wouldReactivate: 0, canSync: true });
-    expect(result.samples.new[0]).toMatchObject({ externalId: "7288", code: "100429", originalCredit: 34805, credit: 34801.52 });
+    expect(result.samples.new[0]).toMatchObject({ externalId: "7288", code: "100429", originalCredit: 34805, credit: 34770.20 });
     expect(fixture.rows()).toEqual(before); expect(fixture.writes).not.toHaveBeenCalled(); expect(fixture.db.transaction).not.toHaveBeenCalled();
   });
   it("returns suspicious preview counts but prevents real writes", async () => {
@@ -184,8 +187,8 @@ it("preserves negotiated and sold stock without reporting reactivation", () => {
 });
 
 it("uses the supplier commission-free entry for the supplied examples", () => {
-  expect(normalized({ id: 14601, valor_credito: "24709.00", entrada: 11900, entrada_sem_comissao: "9900.00" })).toMatchObject({ originalEntry: 9900, entry: 10394.13 });
-  expect(normalized({ id: 14622, valor_credito: "25426.00", entrada: 13100, entrada_sem_comissao: "11000.00" })).toMatchObject({ originalEntry: 11000, entry: 11508.47 });
+  expect(normalized({ id: 14601, valor_credito: "24709.00", entrada: 11900, entrada_sem_comissao: "9900.00" })).toMatchObject({ originalEntry: 9900, entry: 10393.69 });
+  expect(normalized({ id: 14622, valor_credito: "25426.00", entrada: 13100, entrada_sem_comissao: "11000.00" })).toMatchObject({ originalEntry: 11000, entry: 11508.01 });
 });
 it.each([undefined, null, "", -1])("rejects missing or invalid commission-free entry: %s", value => {
   expect(() => normalized({ entrada: 11900, entrada_sem_comissao: value })).toThrow();
