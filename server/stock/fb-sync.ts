@@ -68,7 +68,7 @@ export function normalizeFbStockResponse(data: unknown): FbNormalizedItem[] {
     if (ids.has(item.id)) throw new FbSyncError(`ID duplicado na API FB: ${item.id}. Sincronização cancelada.`);
     ids.add(item.id);
     const originalCredit = cents(item.valor_credito);
-    const credit = roundRatio(originalCredit * 9999n, 10000n);
+    const credit = roundRatio(originalCredit * 999n, 1000n);
     if (!credit) throw new FbSyncError(`Crédito inválido na cota FB ${item.id}.`);
     const originalEntry = cents(item.entrada_sem_comissao);
     const entry = originalEntry + roundRatio(credit * 2n, 100n);
