@@ -9,11 +9,12 @@ import { z } from "zod";
 import { quotaImportSchema, quotaInputSchema, quotaStatusSchema, quotaUpdateSchema, smartSearchInputSchema, validateImportRows, type QuotaInput } from "../../shared/stock";
 import { getCurrentUser } from "../auth/current-user";
 import { getDatabase } from "../db/client";
-import { quotas } from "../db/schema";
+import { quotas, retiredQuotaCodes } from "../db/schema";
 import { findSmartOptions } from "./smart-options";
 import { FbSyncError, previewFbStockSync, syncFbStock } from "./fb-sync";
 import { FB_SUPPLIER } from "./fb-sync";
 import { saImportSourceKey, saImportValues } from "./sa-import";
+import { cleanupExpiredStockReservations } from "./reservation-expiry";
 import * as XLSX from "xlsx";
 
 export const stockRouter = Router();
@@ -41,6 +42,7 @@ function insertValues(data: QuotaInput) {
   return {
     ...data,
     reservationOrigin: data.status === "reserved" ? "manual" : null,
+    reservedAt: data.status === "reserved" ? new Date() : null,
     creditAmount: moneyNumber(moneyCents(data.creditAmount)).toFixed(2),
     entryAmount: moneyNumber(moneyCents(data.entryAmount)).toFixed(2),
     installmentAmount: moneyNumber(moneyCents(data.installmentAmount)).toFixed(2),
@@ -49,7 +51,7 @@ function insertValues(data: QuotaInput) {
 }
 
 function updateValues(data: Partial<QuotaInput>) {
-  return { ...data, ...(data.status ? { reservationOrigin: data.status === "reserved" ? "manual" : null } : {}), creditAmount: data.creditAmount === undefined ? undefined : moneyNumber(moneyCents(data.creditAmount)).toFixed(2), entryAmount: data.entryAmount === undefined ? undefined : moneyNumber(moneyCents(data.entryAmount)).toFixed(2), installmentAmount: data.installmentAmount === undefined ? undefined : moneyNumber(moneyCents(data.installmentAmount)).toFixed(2), outstandingBalance: data.outstandingBalance === undefined ? undefined : moneyNumber(moneyCents(data.outstandingBalance)).toFixed(2) };
+  return { ...data, ...(data.status ? { reservationOrigin: data.status === "reserved" ? "manual" : null, reservedAt: data.status === "reserved" ? new Date() : null } : {}), creditAmount: data.creditAmount === undefined ? undefined : moneyNumber(moneyCents(data.creditAmount)).toFixed(2), entryAmount: data.entryAmount === undefined ? undefined : moneyNumber(moneyCents(data.entryAmount)).toFixed(2), installmentAmount: data.installmentAmount === undefined ? undefined : moneyNumber(moneyCents(data.installmentAmount)).toFixed(2), outstandingBalance: data.outstandingBalance === undefined ? undefined : moneyNumber(moneyCents(data.outstandingBalance)).toFixed(2) };
 }
 
 stockRouter.use("/import", asyncRoute(async (req, res, next) => { if (await requireStockImporter(req, res)) next(); }), express.json({ limit: "10mb" }));
@@ -158,10 +160,11 @@ stockRouter.post("/import/commit", asyncRoute(async (req, res) => {
   if (validRows.some(row => row.supplier === FB_SUPPLIER)) return res.status(400).json({ error: "Cotas da Fraga & Bitello devem ser atualizadas pela API FB" });
   const db = getDatabase();
   if (!db) return res.status(503).json({ error: "Banco de dados não configurado" });
+  await cleanupExpiredStockReservations();
   const summary = await db.transaction(async tx => {
     await lockStock(tx);
     // Repair active links before replacing: imports must never release an active negotiation.
-    await tx.update(quotas).set({ status: "reserved", reservationOrigin: "negotiation" }).where(and(committedQuota(), sql`${quotas.status} <> 'sold'`));
+    await tx.update(quotas).set({ status: "reserved", reservationOrigin: "negotiation", reservedAt: sql`coalesce(${quotas.reservedAt}, now())` }).where(and(committedQuota(), sql`${quotas.status} <> 'sold'`));
     const local = await tx.select({ id: quotas.id, code: quotas.code, externalId: quotas.externalId, supplier: quotas.supplier, status: quotas.status, protected: sql<boolean>`${committedQuota()}` }).from(quotas);
     const imported = new Map<string, typeof local[number]>();
     for (const item of local) if (item.externalId && item.supplier !== FB_SUPPLIER) {
@@ -176,7 +179,8 @@ stockRouter.post("/import/commit", asyncRoute(async (req, res) => {
       const removable = local.filter(item => item.supplier !== FB_SUPPLIER && item.status === "available" && !item.protected && (item.externalId ? !incomingKeys.has(saImportSourceKey(item.supplier, item.externalId)) : !incomingLegacyCodes.has(item.code.toLocaleLowerCase("pt-BR"))));
       for (let offset = 0; offset < removable.length; offset += 500) await tx.delete(quotas).where(inArray(quotas.id, removable.slice(offset, offset + 500).map(item => item.id)));
     }
-    const sixDigitCodes = local.map(item => item.code).filter(code => /^\d{6}$/.test(code));
+    const retired = await tx.select({ code: retiredQuotaCodes.code }).from(retiredQuotaCodes);
+    const sixDigitCodes = [...local.map(item => item.code), ...retired.map(item => item.code)].filter(code => /^\d{6}$/.test(code));
     let nextCode = sixDigitCodes.reduce((largest, code) => Math.max(largest, Number(code)), sixDigitCodes.length ? 0 : 99999);
     const creates: (ReturnType<typeof insertValues> & { externalId: string })[] = [];
     let updated = 0, protectedCount = 0;

@@ -24,6 +24,7 @@ import { backfillNegotiations } from "./negotiations/service";
 import { cleanupExpiredNotifications, notificationsRouter } from "./notifications/routes";
 import { auditRouter } from "./audit/routes";
 import { profileRouter } from "./profile/routes";
+import { cleanupExpiredStockReservations } from "./stock/reservation-expiry";
 
 assertDatabaseSafety();
 if (config.jwtSecret.length < 32) throw new Error("JWT_SECRET deve possuir ao menos 32 caracteres");
@@ -80,7 +81,11 @@ app.use("/api", (error: unknown, _req: express.Request, res: express.Response, _
   if (status === 413 || status === 400) { res.status(status).json({ error: status === 413 ? "Solicitacao acima do limite permitido" : "Solicitacao invalida" }); return; }
   if (error instanceof PasswordChangeRequiredError) { res.status(403).json({ error: error.message, code: error.code }); return; }
   if (error instanceof FileValidationError) { res.status(400).json({ error: error.message }); return; }
-  console.error(JSON.stringify({ event: "api_error", requestId: res.getHeader("X-Request-Id"), type: error instanceof Error ? error.name : "UnknownError" }));
+  const details = error instanceof Error ? {
+    type: error.name, message: error.message, stack: error.stack,
+    cause: error.cause instanceof Error ? { type: error.cause.name, message: error.cause.message, stack: error.cause.stack } : error.cause,
+  } : { type: "UnknownError", value: String(error) };
+  console.error(JSON.stringify({ event: "api_error", requestId: res.getHeader("X-Request-Id"), method: _req.method, path: _req.originalUrl, ...details }));
   res.status(500).json({ error: "Erro interno do servidor" });
 });
 
@@ -98,7 +103,9 @@ app.listen(config.port, config.isProduction ? "0.0.0.0" : "127.0.0.1", () => {
   console.log(`SA Capital disponível em http://localhost:${config.port}`);
 });
 
-const maintenance = () => Promise.all([cleanupExpiredQuotes(), cleanupExpiredDocuments(), cleanupExpiredNotifications(), processStorageCleanup()]).catch(error => console.error("[Manutenção] Falha na limpeza automática", error));
+const maintenance = () => Promise.all([cleanupExpiredQuotes(), cleanupExpiredDocuments(), cleanupExpiredNotifications(), cleanupExpiredStockReservations(), processStorageCleanup()]).catch(error => console.error("[Manutenção] Falha na limpeza automática", error));
+void cleanupExpiredStockReservations().catch(error => console.error("[Estoque] Falha ao limpar reservas expiradas", error));
+setInterval(() => void cleanupExpiredStockReservations().catch(error => console.error("[Estoque] Falha ao limpar reservas expiradas", error)), 60_000).unref();
 if (config.scheduledJobsEnabled) {
   void backfillNegotiations().then(maintenance).catch(error => console.error("[Negociações] Falha ao importar reservas anteriores", error));
   setInterval(() => void processEmailJobs().catch(() => console.error("[Email] Falha no processamento da fila")), 60_000).unref();

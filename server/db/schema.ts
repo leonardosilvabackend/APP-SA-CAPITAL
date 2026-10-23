@@ -100,9 +100,17 @@ export const quotas = pgTable("quotas", {
   outstandingBalance: numeric("outstanding_balance", { precision: 14, scale: 2 }).notNull(),
   status: quotaStatus("status").notNull().default("available"),
   reservationOrigin: varchar("reservation_origin", { length: 20 }),
+  reservedAt: timestamp("reserved_at", { withTimezone: true }),
   featured: boolean("featured").notNull().default(false),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const retiredQuotaCodes = pgTable("retired_quota_codes", {
+  code: varchar("code", { length: 80 }).primaryKey(),
+  supplier: varchar("supplier", { length: 160 }),
+  externalId: varchar("external_id", { length: 120 }),
+  retiredAt: timestamp("retired_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
 export const savedQuotes = pgTable("saved_quotes", {

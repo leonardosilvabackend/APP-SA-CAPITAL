@@ -3,9 +3,20 @@ import { config } from "../config";
 import { getDatabase } from "../db/client";
 import { stockSyncRuns } from "../db/schema";
 import { FbSyncError, syncFbStock } from "./fb-sync";
+import { cleanupExpiredStockReservations } from "./reservation-expiry";
+
+function errorLog(error: unknown) {
+  if (!(error instanceof Error)) return { type: "UnknownError", value: String(error) };
+  const cause = error.cause;
+  return {
+    type: error.name, message: error.message, stack: error.stack,
+    cause: cause instanceof Error ? { type: cause.name, message: cause.message, stack: cause.stack } : cause,
+  };
+}
 
 export async function trackedFbSync(source: "manual" | "automatic") {
   if (!config.fbSyncEnabled) throw new FbSyncError("Sincronização FB desabilitada.", 403);
+  await cleanupExpiredStockReservations();
   const db = getDatabase()!;
   const [run] = await db.insert(stockSyncRuns).values({ source, status: "running" }).returning();
   try {
@@ -14,7 +25,11 @@ export async function trackedFbSync(source: "manual" | "automatic") {
     return result;
   } catch (error) {
     const message = error instanceof FbSyncError ? error.message : "Falha na atualização do estoque. Consulte o operador do sistema.";
-    await db.update(stockSyncRuns).set({ status: "failed", error: message, finishedAt: new Date() }).where(eq(stockSyncRuns.id, run.id));
+    console.error(JSON.stringify({ event: "fb_sync_error", source, runId: run.id, ...errorLog(error) }));
+    try { await db.update(stockSyncRuns).set({ status: "failed", error: message, finishedAt: new Date() }).where(eq(stockSyncRuns.id, run.id)); }
+    catch (persistenceError) {
+      console.error(JSON.stringify({ event: "fb_sync_history_error", source, runId: run.id, ...errorLog(persistenceError) }));
+    }
     throw error;
   }
 }

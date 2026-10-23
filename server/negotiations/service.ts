@@ -58,7 +58,7 @@ export async function reviewReservation(id: string, status: "approved" | "reject
         return current.administrator !== snapshot.administrator || current.category !== snapshot.category || priceFields.some(field => Number(current[field]) !== Number(snapshot[field]));
       });
       if (changed.length) throw new NegotiationError(409, `Valores atualizados nas cotas ${changed.map(q => q.code).join(", ")}. Gere uma nova cotacao antes de reservar.`);
-      await tx.update(quotas).set({ status: "reserved", reservationOrigin: "negotiation", updatedAt: new Date() }).where(and(inArray(quotas.id, ids), eq(quotas.status, "available")));
+      await tx.update(quotas).set({ status: "reserved", reservationOrigin: "negotiation", reservedAt: new Date(), updatedAt: new Date() }).where(and(inArray(quotas.id, ids), eq(quotas.status, "available")));
     }
     const [item] = await tx.update(reservationRequests).set({ status, reviewedBy: reviewerId, reviewedAt: new Date() }).where(eq(reservationRequests.id, id)).returning();
     const negotiation = status === "approved" ? await createNegotiation(tx, item, quote) : null;
@@ -96,7 +96,7 @@ export async function releaseNegotiationStock(tx: Transaction, item: typeof nego
   for (const quota of item.selectedQuotas) {
     // Recover snapshots lost by the old destructive import, without overwriting a newer stock identity.
     await tx.insert(quotas).values({ id: quota.id, code: quota.code, category: quota.category, administrator: quota.administrator, installmentCount: quota.installmentCount, creditAmount: String(quota.creditAmount), entryAmount: String(quota.entryAmount), installmentAmount: String(quota.installmentAmount), outstandingBalance: String(quota.outstandingBalance), status: "available" }).onConflictDoNothing();
-    await tx.update(quotas).set({ status: "available", reservationOrigin: null, updatedAt: new Date() }).where(and(or(eq(quotas.id, quota.id), eq(quotas.code, quota.code)), sql`not ${committedQuota(item.id)}`));
+    await tx.update(quotas).set({ status: "available", reservationOrigin: null, reservedAt: null, updatedAt: new Date() }).where(and(or(eq(quotas.id, quota.id), eq(quotas.code, quota.code)), sql`not ${committedQuota(item.id)}`));
   }
   // Prevent startup backfill from resurrecting a deleted negotiation.
   await tx.update(reservationRequests).set({ status: "cancelled", reviewedAt: new Date() }).where(eq(reservationRequests.id, item.reservationId));
