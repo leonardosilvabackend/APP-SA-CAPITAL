@@ -33,8 +33,12 @@ describe("FB normalization", () => {
     expect(normalized({ reserva: "Disponível" }).status).toBe("available");
     expect(() => normalized({ reserva: "???" })).toThrow("Status desconhecido");
   });
-  it.each([{ valor_credito: null }, { valor_credito: "" }, { valor_credito: "0" }, { entrada_sem_comissao: -1 }, { parcelas: 1.5 }, { parcelas: 0 }, { id: null }, { categoria: " " }, { administradora: "" }, { valor_parcela: "NaN" }, { valor_parcela: "999999999999.99", parcelas: 100 }])("rejects essential invalid values: %j", changes => {
+  it.each([{ valor_credito: null }, { valor_credito: "" }, { valor_credito: "0" }, { entrada_sem_comissao: -1 }, { parcelas: 1.5 }, { id: null }, { categoria: " " }, { administradora: "" }, { valor_parcela: "NaN" }, { valor_parcela: "999999999999.99", parcelas: 100 }])("rejects essential invalid values: %j", changes => {
     expect(() => normalized(changes)).toThrow();
+  });
+  it("ignores an upstream quota with no remaining installments", () => {
+    expect(normalizeFbStockResponse([{ ...raw, parcelas: 0 }, { ...raw, parcelas: "0" }, { ...raw, id: 7289 }])).toMatchObject([{ externalId: "7289" }]);
+    expect(() => normalizeFbStockResponse([{ ...raw, parcelas: 0 }])).toThrow("não retornou cotas comerciais ativas");
   });
   it("rejects duplicate IDs and empty or malformed lists", () => {
     for (const data of [[], {}, null, [raw, raw]]) expect(() => normalizeFbStockResponse(data)).toThrow();

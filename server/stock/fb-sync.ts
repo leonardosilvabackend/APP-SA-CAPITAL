@@ -70,7 +70,14 @@ export function normalizeFbStockResponse(data: unknown): FbNormalizedItem[] {
     throw new FbSyncError("Resposta vazia, inválida ou anormal da API FB. Sincronização cancelada.");
   }
   const ids = new Set<string>();
-  return data.map((raw, index) => {
+  const items: FbNormalizedItem[] = [];
+  data.forEach((raw, index) => {
+    // A FB usa prazo zero para cotas encerradas. Elas nao possuem saldo
+    // comercial e devem ser tratadas como ausentes do estoque ativo.
+    if (raw && typeof raw === "object" && "parcelas" in raw) {
+      const installments = (raw as { parcelas?: unknown }).parcelas;
+      if (installments === 0 || typeof installments === "string" && /^0+$/.test(installments.trim())) return;
+    }
     const parsed = apiItemSchema.safeParse(raw);
     if (!parsed.success) {
       const issue = parsed.error.issues[0];
@@ -87,15 +94,17 @@ export function normalizeFbStockResponse(data: unknown): FbNormalizedItem[] {
     const entry = originalEntry + roundRatio(credit * 2n, 100n);
     const originalInstallment = cents(item.valor_parcela);
     const installment = originalInstallment + 170n;
-    return {
+    items.push({
       externalId: item.id, category: item.categoria, administrator: normalizeAdministratorName(item.administradora),
       originalCredit: money(originalCredit), credit: money(credit),
       originalEntry: money(originalEntry), entry: money(entry),
       installments: item.parcelas, originalInstallmentValue: money(originalInstallment),
       installmentValue: money(installment), outstandingBalance: money(installment * BigInt(item.parcelas)),
       status: normalizeFbStatus(item.reserva), fund: money(cents(item.fundo)), nextAdjustment: item.prox_reajuste,
-    };
+    });
   });
+  if (!items.length) throw new FbSyncError("A API FB não retornou cotas comerciais ativas. Sincronização cancelada.");
+  return items;
 }
 
 export async function fetchFbStock(): Promise<FbNormalizedItem[]> {
