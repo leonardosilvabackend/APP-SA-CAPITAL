@@ -89,11 +89,14 @@ describe("FB planning", () => {
     const plan = buildFbSyncPlan([normalized()], [local("7288", "100100", "available", "Other")]);
     expect(plan.creates[0].code).toBe("100101"); expect(plan.updates).toHaveLength(0); expect(plan.missing).toHaveLength(0);
   });
-  it("detects abnormal disappearance and mass reservation", () => {
+  it("blocks abnormal disappearance without rejecting explicit supplier reservations", () => {
     const locals = Array.from({ length: 10 }, (_, i) => local(String(7288 + i), String(100100 + i)));
     expect(buildFbSyncPlan([normalized()], locals).blockingReasons.length).toBeGreaterThan(0);
     const reserved = locals.map(item => normalized({ id: Number(item.externalId), reserva: "Reservado" }));
-    expect(buildFbSyncPlan(reserved, locals).blockingReasons.length).toBeGreaterThan(0);
+    const plan = buildFbSyncPlan(reserved, locals);
+    expect(plan.wouldReserve).toBe(10);
+    expect(plan.missing).toHaveLength(0);
+    expect(plan.blockingReasons).toEqual([]);
   });
   it("fails before writes on local duplicates or exhausted codes", () => {
     expect(() => buildFbSyncPlan([normalized()], [local("7288"), local("7288", "100429")])).toThrow("duplicado");

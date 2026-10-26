@@ -167,9 +167,10 @@ export function buildFbSyncPlan(items: FbNormalizedItem[], local: LocalQuota[], 
   wouldReserve += missing.length;
   const activeCount = integrated.filter(item => !item.protected && item.status !== "sold" && item.status !== "reserved").length;
   const blockingReasons: string[] = [];
-  // Historical missing/reserved quotas are excluded from the baseline to avoid cumulative false alarms.
-  if ((activeCount >= 5 && wouldReserve > activeCount * 0.2) || (activeCount >= 2 && wouldReserve === activeCount)) {
-    blockingReasons.push(`Resposta suspeita: ${wouldReserve} de ${activeCount} cotas FB não reservadas passariam a reserved. Nenhuma gravação será permitida.`);
+  // Only missing IDs indicate a possibly truncated response. Explicit "Reservado"
+  // statuses are authoritative supplier updates and may legitimately arrive in bulk.
+  if ((activeCount >= 5 && missing.length > activeCount * 0.2) || (activeCount >= 2 && missing.length === activeCount)) {
+    blockingReasons.push(`Resposta suspeita: ${missing.length} de ${activeCount} cotas FB ativas não foram recebidas. Nenhuma gravação será permitida.`);
   }
   if (integrated.length >= 10 && !items.some(item => byExternalId.has(item.externalId))) {
     blockingReasons.push("Resposta suspeita: nenhum ID recebido corresponde às cotas FB já integradas.");
