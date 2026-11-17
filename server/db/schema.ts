@@ -120,6 +120,8 @@ export const quotas = pgTable("quotas", {
 
 export const retiredQuotaCodes = pgTable("retired_quota_codes", {
   code: varchar("code", { length: 80 }).primaryKey(),
+  supplier: varchar("supplier", { length: 160 }),
+  externalId: varchar("external_id", { length: 120 }),
   retiredAt: timestamp("retired_at", { withTimezone: true }).defaultNow().notNull(),
 });
 

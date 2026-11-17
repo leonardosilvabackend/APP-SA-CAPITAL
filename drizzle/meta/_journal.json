@@ -103,29 +103,29 @@
     {
       "idx": 14,
       "version": "7",
-      "when": 1790697600000,
-      "tag": "0014_test_partner_features",
+      "when": 1792764000000,
+      "tag": "0014_expire_stock_reservations",
       "breakpoints": true
     },
     {
       "idx": 15,
       "version": "7",
-      "when": 1790784000000,
-      "tag": "0015_alert_balance_relation",
+      "when": 1792765000000,
+      "tag": "0015_test_partner_features",
       "breakpoints": true
     },
     {
       "idx": 16,
       "version": "7",
-      "when": 1790870400000,
-      "tag": "0016_crm_kanban",
+      "when": 1792766000000,
+      "tag": "0016_alert_balance_relation",
       "breakpoints": true
     },
     {
       "idx": 17,
       "version": "7",
-      "when": 1792764000000,
-      "tag": "0017_expire_stock_reservations",
+      "when": 1792767000000,
+      "tag": "0017_crm_kanban",
       "breakpoints": true
     },
     {"idx":18,"version":"7","when":1792800000000,"tag":"0018_smart_search_presence","breakpoints":true},

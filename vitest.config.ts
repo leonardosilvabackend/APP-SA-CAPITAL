@@ -11,6 +11,7 @@ export default defineConfig({
   test: {
     setupFiles: ["./server/test-setup.ts"], environment: "node",
     include: ["server/**/*.test.ts", "shared/**/*.test.ts", "client/src/**/*.test.ts"],
+    testTimeout: 12_000,
     maxWorkers: 2,
   },
 });

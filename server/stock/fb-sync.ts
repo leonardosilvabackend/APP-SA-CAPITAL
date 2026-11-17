@@ -133,7 +133,7 @@ export type FbSyncPlan = {
   wouldReserve: number; wouldReactivate: number; blockingReasons: string[];
 };
 
-export function buildFbSyncPlan(items: FbNormalizedItem[], local: LocalQuota[], retiredCodes: string[] = []): FbSyncPlan {
+export function buildFbSyncPlan(items: FbNormalizedItem[], local: LocalQuota[], retiredCodes: string[] = [], retiredExternalIds: string[] = []): FbSyncPlan {
   if (!items.length) throw new FbSyncError("A API FB não retornou cotas. Sincronização cancelada.");
   const integrated = local.filter(item => item.supplier === FB_SUPPLIER && item.externalId?.trim());
   const byExternalId = new Map<string, LocalQuota>();
@@ -145,6 +145,7 @@ export function buildFbSyncPlan(items: FbNormalizedItem[], local: LocalQuota[], 
   let nextCode = codes.reduce((largest, code) => Math.max(largest, Number(code)), codes.length ? 0 : 99999);
   const creates: PlannedItem[] = [], updates: PlannedItem[] = [];
   const receivedIds = new Set<string>();
+  const retiredIds = new Set(retiredExternalIds);
   let wouldReactivate = 0, wouldReserve = 0;
   for (const item of items) {
     if (receivedIds.has(item.externalId)) throw new FbSyncError(`ID FB duplicado: ${item.externalId}.`);
@@ -156,6 +157,9 @@ export function buildFbSyncPlan(items: FbNormalizedItem[], local: LocalQuota[], 
       if (existing.status === "reserved" && item.status === "available") wouldReactivate++;
       if (existing.status !== "reserved" && item.status === "reserved") wouldReserve++;
     } else {
+      // A supplier reservation already expired locally. Keep it out of active stock
+      // until the supplier makes it available again; then it receives a new SA code.
+      if (item.status === "reserved" && retiredIds.has(item.externalId)) continue;
       if (++nextCode > 999999) throw new FbSyncError("A sequência de códigos SA ultrapassou 999999.", 409);
       creates.push({ ...item, code: String(nextCode).padStart(6, "0"), localId: null });
     }
@@ -164,9 +168,10 @@ export function buildFbSyncPlan(items: FbNormalizedItem[], local: LocalQuota[], 
   wouldReserve += missing.length;
   const activeCount = integrated.filter(item => !item.protected && item.status !== "sold" && item.status !== "reserved").length;
   const blockingReasons: string[] = [];
-  // Historical missing/reserved quotas are excluded from the baseline to avoid cumulative false alarms.
-  if ((activeCount >= 5 && wouldReserve > activeCount * 0.2) || (activeCount >= 2 && wouldReserve === activeCount)) {
-    blockingReasons.push(`Resposta suspeita: ${wouldReserve} de ${activeCount} cotas FB não reservadas passariam a reserved. Nenhuma gravação será permitida.`);
+  // Only missing IDs indicate a possibly truncated response. Explicit "Reservado"
+  // statuses are authoritative supplier updates and may legitimately arrive in bulk.
+  if ((activeCount >= 5 && missing.length > activeCount * 0.2) || (activeCount >= 2 && missing.length === activeCount)) {
+    blockingReasons.push(`Resposta suspeita: ${missing.length} de ${activeCount} cotas FB ativas não foram recebidas. Nenhuma gravação será permitida.`);
   }
   if (integrated.length >= 10 && !items.some(item => byExternalId.has(item.externalId))) {
     blockingReasons.push("Resposta suspeita: nenhum ID recebido corresponde às cotas FB já integradas.");
@@ -191,8 +196,8 @@ export async function previewFbStockSync() {
   const db = getDatabase();
   if (!db) throw new FbSyncError("Banco de dados não configurado", 503);
   const items = await fetchFbStock();
-  const [local, retired] = await Promise.all([db.select(localFields).from(quotas), db.select({ code: retiredQuotaCodes.code }).from(retiredQuotaCodes)]);
-  return previewOf(buildFbSyncPlan(items, local, retired.map(item => item.code)));
+  const [local, retired] = await Promise.all([db.select(localFields).from(quotas), db.select({ code: retiredQuotaCodes.code, supplier: retiredQuotaCodes.supplier, externalId: retiredQuotaCodes.externalId }).from(retiredQuotaCodes)]);
+  return previewOf(buildFbSyncPlan(items, local, retired.map(item => item.code), retired.filter(item => item.supplier === FB_SUPPLIER && item.externalId).map(item => item.externalId!)));
 }
 
 export type FbSyncResult = { received: number; created: number; updated: number; reserved: number; reactivated: number };
@@ -221,8 +226,8 @@ export async function syncFbStock(): Promise<FbSyncResult> {
       await tx.execute(sql`set local lock_timeout = '5s'`);
       await lockStock(tx);
       const local = await tx.select(localFields).from(quotas);
-      const retired = await tx.select({ code: retiredQuotaCodes.code }).from(retiredQuotaCodes);
-      const plan = buildFbSyncPlan(items, local, retired.map(item => item.code));
+      const retired = await tx.select({ code: retiredQuotaCodes.code, supplier: retiredQuotaCodes.supplier, externalId: retiredQuotaCodes.externalId }).from(retiredQuotaCodes);
+      const plan = buildFbSyncPlan(items, local, retired.map(item => item.code), retired.filter(item => item.supplier === FB_SUPPLIER && item.externalId).map(item => item.externalId!));
       if (plan.blockingReasons.length) throw new FbSyncError(plan.blockingReasons.join(" "), 409);
       const values = (item: PlannedItem) => ({
         category: item.category, administrator: item.administrator, supplier: FB_SUPPLIER,

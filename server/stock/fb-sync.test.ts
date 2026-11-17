@@ -72,6 +72,10 @@ describe("FB planning", () => {
   it("never reuses a retired numeric code", () => {
     expect(buildFbSyncPlan([normalized()], [], ["100428"]).creates[0].code).toBe("100429");
   });
+  it("does not recreate an expired supplier reservation until it returns available", () => {
+    expect(buildFbSyncPlan([normalized({ reserva: "Reservado" })], [], ["100428"], ["7288"]).creates).toHaveLength(0);
+    expect(buildFbSyncPlan([normalized()], [], ["100428"], ["7288"]).creates[0].code).toBe("100429");
+  });
   it("preserves an existing code and reactivates returning stock", () => {
     const plan = buildFbSyncPlan([normalized()], [local("7288", "SA95", "reserved")]);
     expect(plan.creates).toHaveLength(0); expect(plan.updates[0].code).toBe("SA95"); expect(plan.wouldReactivate).toBe(1);
@@ -85,11 +89,14 @@ describe("FB planning", () => {
     const plan = buildFbSyncPlan([normalized()], [local("7288", "100100", "available", "Other")]);
     expect(plan.creates[0].code).toBe("100101"); expect(plan.updates).toHaveLength(0); expect(plan.missing).toHaveLength(0);
   });
-  it("detects abnormal disappearance and mass reservation", () => {
+  it("blocks abnormal disappearance without rejecting explicit supplier reservations", () => {
     const locals = Array.from({ length: 10 }, (_, i) => local(String(7288 + i), String(100100 + i)));
     expect(buildFbSyncPlan([normalized()], locals).blockingReasons.length).toBeGreaterThan(0);
     const reserved = locals.map(item => normalized({ id: Number(item.externalId), reserva: "Reservado" }));
-    expect(buildFbSyncPlan(reserved, locals).blockingReasons.length).toBeGreaterThan(0);
+    const plan = buildFbSyncPlan(reserved, locals);
+    expect(plan.wouldReserve).toBe(10);
+    expect(plan.missing).toHaveLength(0);
+    expect(plan.blockingReasons).toEqual([]);
   });
   it("fails before writes on local duplicates or exhausted codes", () => {
     expect(() => buildFbSyncPlan([normalized()], [local("7288"), local("7288", "100429")])).toThrow("duplicado");
