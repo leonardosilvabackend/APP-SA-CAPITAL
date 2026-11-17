@@ -81,6 +81,11 @@ quotesRouter.post("/saved/:id/opportunity", asyncRoute(async (req, res) => {
   const warnings = await stockWarnings(quote.selectedQuotas, db);
   if (warnings.length) return res.status(409).json({ error: warnings.join("; ") });
   const [item] = await db.update(savedQuotes).set({ opportunityActive: true, opportunityReason: parsed.data.reason }).where(condition).returning();
+  const eligible = await db.select({ id: users.id }).from(users).where(eq(users.status, "active"));
+  const existing = await db.select({ recipientId: notifications.recipientId }).from(notifications).where(eq(notifications.dedupeKey, `opportunity:${quote.id}`));
+  const notified = new Set(existing.map(value => value.recipientId));
+  const recipients = eligible.filter(value => !notified.has(value.id));
+  if (recipients.length) await db.insert(notifications).values(recipients.map(value => ({ recipientId: value.id, dedupeKey: `opportunity:${quote.id}`, title: "Nova oportunidade disponível", message: parsed.data.reason, link: "/estoque?opportunities=1", expiresAt: notificationExpiry() })));
   return res.json({ item });
 }));
 quotesRouter.delete("/saved/:id/opportunity", asyncRoute(async (req, res) => {

@@ -8,7 +8,7 @@
   },
   "scripts": {
     "dev": "node --import tsx scripts/run.mjs development dev",
-    "build": "npm run check && vite build && esbuild server/index.ts --platform=node --packages=external --bundle --format=esm --outdir=dist",
+    "build": "npm run check && vite build && esbuild server/index.ts --platform=node --packages=external --bundle --format=esm --outdir=dist && esbuild server/stock/smart-solver-worker.mjs --platform=node --packages=external --bundle --format=esm --outfile=dist/smart-solver-worker.mjs",
     "start": "node dist/index.js",
     "check": "tsc --noEmit",
     "test": "node --import tsx scripts/run.mjs test test",
@@ -26,7 +26,10 @@
     "verify": "npm run test -- --no-cache && npm run build",
     "db:bootstrap:test": "node --import tsx scripts/run.mjs test bootstrap",
     "db:bootstrap:dev": "node --import tsx scripts/run.mjs development bootstrap",
-    "test:e2e": "node --import tsx scripts/e2e-test.mjs"
+    "test:e2e": "node --import tsx scripts/e2e-test.mjs",
+    "storage:audit:test": "node scripts/audit-test-storage.mjs",
+    "storage:homologate:test": "node scripts/homologate-test-storage.mjs",
+    "storage:analyze:test": "node scripts/analyze-test-storage.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",
@@ -34,8 +37,9 @@
     "@tanstack/react-query": "^5.90.2",
     "date-fns": "^4.1.0",
     "dotenv": "^17.2.2",
-    "drizzle-orm": "^0.44.5",
+    "drizzle-orm": "^0.45.2",
     "express": "^4.21.2",
+    "highs": "1.15.3",
     "jose": "^6.1.0",
     "lucide-react": "^0.468.0",
     "postgres": "^3.4.7",
@@ -45,7 +49,7 @@
     "sonner": "^2.0.7",
     "wouter": "^3.7.1",
     "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz",
-    "zod": "^4.1.12"
+    "zod": "^4.6.6"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.1.14",
@@ -62,5 +66,12 @@
     "vite": "^7.1.9",
     "vitest": "^3.2.4"
   },
-  "packageManager": "pnpm@10.4.1"
+  "packageManager": "pnpm@10.4.1",
+  "pnpm": {
+    "overrides": {
+      "body-parser@<1.20.9": "^1.20.9",
+      "proxy-addr@<2.0.8": "^2.0.8",
+      "qs@<6.16.1": "^6.16.1"
+    }
+  }
 }

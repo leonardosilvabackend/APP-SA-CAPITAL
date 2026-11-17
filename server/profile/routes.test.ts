@@ -11,6 +11,7 @@ vi.mock("node:fs/promises", () => ({ mkdir: vi.fn(), writeFile: (...args: unknow
 vi.mock("../db/client", () => ({ getDatabase: () => ({
   select: () => ({ from: () => ({ where: (query: unknown) => { state.queries.push(query); const limit = async () => state.results.shift() ?? []; return { limit, orderBy: () => ({ limit }) }; } }) }),
   update: () => ({ set: (data: unknown) => ({ where: async (query: unknown) => state.writes(data, query) }) }),
+  insert: () => ({ values: (data: unknown) => ({ onConflictDoUpdate: async (conflict: unknown) => state.writes(data, conflict) }) }),
 }) }));
 import { profileRouter } from "./routes";
 const self = "123e4567-e89b-42d3-a456-426614174000", assigned = "123e4567-e89b-42d3-a456-426614174001", other = "123e4567-e89b-42d3-a456-426614174002";
@@ -49,9 +50,15 @@ it("validates the content of the photo and always writes the authenticated user'
   expect((await upload([137, 80, 78, 71, 13, 10, 26, 10])).status).toBe(200);
   expect(state.photoWrites.mock.calls[0][0]).toMatch(new RegExp(self + "$"));
 });
-it("allows only a self phone update, rejecting role and manager changes", async () => {
+it("writes only the self-declared profile, rejecting administrative fields", async () => {
   const update = (body: unknown) => fetch(base, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
   expect((await update({ phone: "123", role: "admin" })).status).toBe(400); expect(state.writes).not.toHaveBeenCalled();
   expect((await update({ phone: "123" })).status).toBe(200);
-  expect(new PgDialect().sqlToQuery(state.writes.mock.calls[0][1] as SQL).params).toEqual([self]);
+  expect(state.writes.mock.calls[0][0]).toMatchObject({ userId: self, phone: "123" });
+});
+it("accepts only the profile gender selection values", async () => {
+  const update = (gender: string) => fetch(base, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ gender }) });
+  for (const gender of ["Feminino", "Masculino", "Prefiro não dizer"]) expect((await update(gender)).status).toBe(200);
+  expect((await update("Outro valor")).status).toBe(400);
+  expect(state.writes).toHaveBeenCalledTimes(3);
 });

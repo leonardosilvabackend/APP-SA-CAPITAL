@@ -1,17 +1,16 @@
-import { createClient } from "@supabase/supabase-js";
 import { asc, eq, sql } from "drizzle-orm";
-import { config } from "../config";
 import { getDatabase } from "../db/client";
 import { storageCleanup } from "../db/schema";
 import type { StockTransaction } from "../stock/protection";
+import { storageIsConfigured, storageProvider } from "../storage/provider";
 
 export async function queueStorageCleanup(paths: string[], tx: StockTransaction | NonNullable<ReturnType<typeof getDatabase>> = getDatabase()!) {
   if (paths.length) await tx.insert(storageCleanup).values([...new Set(paths)].map(path => ({ path }))).onConflictDoNothing();
 }
 export async function processStorageCleanup() {
-  if (!config.supabaseUrl || !config.supabaseServiceRoleKey) return;
+  if (!storageIsConfigured()) return;
   const db = getDatabase()!;
-  const storage = createClient(config.supabaseUrl, config.supabaseServiceRoleKey, { auth: { persistSession: false } }).storage.from(config.storageBucket);
+  const storage = storageProvider();
   const pending = await db.select().from(storageCleanup).orderBy(asc(storageCleanup.createdAt)).limit(100);
   for (const item of pending) {
     try {

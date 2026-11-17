@@ -44,6 +44,7 @@ export function calculateQuote(quotas: CalculationQuota[], commissionRate: numbe
   const baseEntryTotal = moneyNumber(sumMoney(quotas.map(quota => quota.entryAmount)));
   const commissionTotal = moneyNumber(roundRatio(credit, moneyCents(commissionRate), 10000n));
   const finalEntryTotal = moneyNumber(sumMoney([baseEntryTotal, commissionTotal]));
+  const isItau = quotas.length > 0 && quotas.every(quota => quota.administrator.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().includes("itau"));
   return {
     creditTotal,
     baseEntryTotal,
@@ -52,7 +53,7 @@ export function calculateQuote(quotas: CalculationQuota[], commissionRate: numbe
     finalEntryTotal,
     entryPercentage: creditTotal ? finalEntryTotal / creditTotal * 100 : 0,
     outstandingBalanceTotal: moneyNumber(sumMoney(quotas.map(quota => quota.outstandingBalance))),
-    transferFeeTotal: moneyNumber(roundRatio(credit, 13n, 1000n)),
+    transferFeeTotal: isItau ? quotas.length * 650 : moneyNumber(roundRatio(credit, 13n, 1000n)),
     insuranceTotal: moneyNumber(sumMoney(quotas.map(insuranceForQuota))),
     installmentCascade: buildInstallmentCascade(quotas),
   };

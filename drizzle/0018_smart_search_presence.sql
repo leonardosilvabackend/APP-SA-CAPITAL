@@ -1,0 +1,4 @@
+CREATE TABLE "auth_sessions" ("id" uuid PRIMARY KEY NOT NULL,"user_id" uuid NOT NULL REFERENCES "users"("id") ON DELETE CASCADE,"last_activity_at" timestamptz DEFAULT now() NOT NULL,"expires_at" timestamptz NOT NULL,"revoked_at" timestamptz,"created_at" timestamptz DEFAULT now() NOT NULL);
+CREATE INDEX "auth_sessions_user_activity_idx" ON "auth_sessions"("user_id","last_activity_at");
+CREATE TABLE "stock_search_wishes" ("id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,"user_id" uuid NOT NULL REFERENCES "users"("id") ON DELETE CASCADE,"administrator" varchar(160) NOT NULL,"category" varchar(80) NOT NULL,"target_credit" numeric(14,2),"max_entry" numeric(14,2),"max_installment" numeric(14,2),"min_term" integer,"max_term" integer,"max_balance" numeric(14,2),"active" boolean DEFAULT true NOT NULL,"created_at" timestamptz DEFAULT now() NOT NULL);
+CREATE INDEX "stock_search_wishes_user_idx" ON "stock_search_wishes"("user_id");

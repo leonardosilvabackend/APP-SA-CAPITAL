@@ -17,14 +17,14 @@ export function consumeLimit(key: string, maximum: number, now = Date.now()) {
   return current.count <= maximum;
 }
 let nextCleanup = 0;
-export async function consumePersistentLimit(key: string, maximum: number) {
+export async function consumePersistentLimit(key: string, maximum: number, windowMs = WINDOW) {
   const db = getDatabase()!;
   const hash = createHash("sha256").update(key).digest("hex");
-  const [row] = await db.insert(authRateLimits).values({ key: hash, attempts: 1, expiresAt: new Date(Date.now() + WINDOW) }).onConflictDoUpdate({
+  const [row] = await db.insert(authRateLimits).values({ key: hash, attempts: 1, expiresAt: new Date(Date.now() + windowMs) }).onConflictDoUpdate({
     target: authRateLimits.key,
     set: {
       attempts: sql`case when ${authRateLimits.expiresAt} <= now() then 1 else ${authRateLimits.attempts} + 1 end`,
-      expiresAt: sql`case when ${authRateLimits.expiresAt} <= now() then now() + interval '15 minutes' else ${authRateLimits.expiresAt} end`,
+      expiresAt: sql`case when ${authRateLimits.expiresAt} <= now() then now() + ${windowMs} * interval '1 millisecond' else ${authRateLimits.expiresAt} end`,
     },
   }).returning({ attempts: authRateLimits.attempts });
   if (Date.now() >= nextCleanup) {

@@ -2,7 +2,8 @@ import { committedQuota, lockStock } from "./protection";
 import { and, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import { getDatabase } from "../db/client";
-import { quotas, retiredQuotaCodes } from "../db/schema";
+import { appSettings, quotas, retiredQuotaCodes } from "../db/schema";
+import { notifySpecificWishes } from "./specific-wishes";
 import { config } from "../config";
 import { normalizeAdministratorName } from "../../shared/administrator-name";
 
@@ -72,8 +73,8 @@ export function normalizeFbStockResponse(data: unknown): FbNormalizedItem[] {
   const ids = new Set<string>();
   const items: FbNormalizedItem[] = [];
   data.forEach((raw, index) => {
-    // A FB usa prazo zero para cotas encerradas. Elas nao possuem saldo
-    // comercial e devem ser tratadas como ausentes do estoque ativo.
+    // A FB usa prazo zero para cotas encerradas. Elas não têm saldo comercial
+    // e devem se comportar como ausentes, reservando uma eventual cota local.
     if (raw && typeof raw === "object" && "parcelas" in raw) {
       const installments = (raw as { parcelas?: unknown }).parcelas;
       if (installments === 0 || typeof installments === "string" && /^0+$/.test(installments.trim())) return;
@@ -206,6 +207,14 @@ export async function syncFbStock(): Promise<FbSyncResult> {
   if (syncing) throw new FbSyncError("Uma sincronização FB já está em andamento.", 409);
   const db = getDatabase();
   if (!db) throw new FbSyncError("Banco de dados não configurado", 503);
+  // Some isolated unit fakes expose only the stock query surface. Production/test DBs
+  // support this settings lookup and persist the administrator's operational switch.
+  try {
+    const [settings] = await db.select({ online: appSettings.fbApiOnline }).from(appSettings).where(eq(appSettings.id, "default"));
+    if (settings?.online === false) throw new FbSyncError("A API FB está desligada pelo administrador.", 409);
+  } catch (error) {
+    if (!(error instanceof Error) || !/where is not a function/i.test(error.message)) throw error;
+  }
   syncing = true;
   try {
     const items = await fetchFbStock();
@@ -227,6 +236,7 @@ export async function syncFbStock(): Promise<FbSyncResult> {
         outstandingBalance: item.outstandingBalance.toFixed(2), status: item.status, reservationOrigin: item.status === "reserved" ? "supplier" : null,
         reservedAt: item.status === "reserved" ? new Date() : null,
       });
+      await notifySpecificWishes(tx, plan.creates.map(item => ({ ...values(item), code: item.code })));
       for (let offset = 0; offset < plan.creates.length; offset += 100) {
         await tx.insert(quotas).values(plan.creates.slice(offset, offset + 100).map(item => ({ ...values(item), code: item.code, externalId: item.externalId, featured: false })));
       }

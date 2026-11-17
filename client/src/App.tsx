@@ -8,6 +8,7 @@ import {
   ChevronRight,
   FileSearch,
   LayoutDashboard,
+  KanbanSquare,
   LogOut,
   Menu,
   PackageSearch,
@@ -19,7 +20,7 @@ import {
   Download,
   X,
 } from "lucide-react";
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Link, Route, Switch, useLocation } from "wouter";
 import type { AuthenticatedUser, DashboardMetrics, HealthResponse } from "@shared/contracts";
 import UsersPage from "./pages/UsersPage";
@@ -35,7 +36,13 @@ import AuditPage from "./pages/AuditPage";
 import ChecklistPage from "./pages/ChecklistPage";
 import ProfileContact from "./pages/ProfileContact";
 import StockImportModal from "./pages/stock/StockImportModal";
-import { downloadSaStock } from "./pages/stock/contracts";
+import { downloadPublicStock, downloadSaStock, type StockFilters } from "./pages/stock/contracts";
+import StockAlertModal from "./pages/stock/StockAlertModal";
+import AdministratorCreditModal from "./components/AdministratorCreditModal";
+import CrmPage from "./pages/CrmPage";
+import LandingPage from "./pages/LandingPage";
+import EssentialStorageGate, { essentialStorageKey } from "./components/EssentialStorageGate";
+import CommunicationsModal from "./components/CommunicationsModal";
 import { toast } from "sonner";
 import { selectionSurface } from "./lib/selectionSurface";
 
@@ -45,6 +52,7 @@ const navigation = [
   { href: "/estoque", label: "Estoque de cotas", icon: PackageSearch, roles: ["admin", "administrative", "advisor", "user"] },
   { href: "/cotacoes", label: "Cotações", icon: WalletCards, roles: ["admin", "advisor", "user"] },
   { href: "/negociacoes", label: "Negociações", icon: WalletCards, roles: ["admin", "administrative", "advisor", "user"] },
+  { href: "/crm", label: "CRM", icon: KanbanSquare, roles: ["admin", "administrative", "advisor", "user"] },
   { href: "/administradoras", label: "Administradoras", icon: Building2, roles: ["admin", "administrative", "advisor", "user"] },
   { href: "/pre-analises", label: "Pré-análises", icon: FileSearch, roles: ["admin", "administrative", "advisor", "user"] },
   { href: "/check-list", label: "Check-list", icon: FileSearch, roles: ["admin", "administrative", "advisor", "user"] },
@@ -66,8 +74,14 @@ function AppShell({ children, user, onLogout }: { children: ReactNode; user: Aut
   const [location] = useLocation();
   const [open, setOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [communicationsOpen, setCommunicationsOpen] = useState(false);
+  const [manageCommunications, setManageCommunications] = useState(false);
+  const unreadCommunications = useQuery<{ items: unknown[] }>({ queryKey: ["communications", "unread"], queryFn: async () => { const response = await fetch("/api/communications?unread=1"); if (!response.ok) throw new Error("Comunicados indisponíveis"); return response.json(); } });
   const notifications = useQuery<{ items: { id: string; title: string; message: string; link: string | null; createdAt: string }[] }>({ queryKey: ["notifications"], queryFn: async () => { const response = await fetch("/api/notifications"); if (!response.ok) throw new Error("Notificações indisponíveis"); return response.json(); }, refetchInterval: 30_000 });
 
+  useEffect(() => { if (!notificationsOpen || !notifications.data?.items.length) return; const ids = notifications.data.items.map(item => item.id); const timer = window.setTimeout(() => { void Promise.all(ids.map(id => fetch(`/api/notifications/${id}/read`, { method: "PATCH" }))).then(() => notifications.refetch()); }, 800); return () => window.clearTimeout(timer); }, [notificationsOpen, notifications.data?.items, notifications]);
+  useEffect(() => { if (unreadCommunications.data?.items.length) { setManageCommunications(false); setCommunicationsOpen(true); } }, [unreadCommunications.data]);
+  useEffect(() => { const listener = () => { setManageCommunications(true); setCommunicationsOpen(true); }; window.addEventListener("open-communications-manager", listener); return () => window.removeEventListener("open-communications-manager", listener); }, []);
   return (
     <div className="app-shell">
       {open && <button className="sidebar-backdrop" aria-label="Fechar menu" onClick={() => setOpen(false)} />}
@@ -99,6 +113,7 @@ function AppShell({ children, user, onLogout }: { children: ReactNode; user: Aut
         </header>
         <main>{children}</main>
       </div>
+      {communicationsOpen && <CommunicationsModal management={manageCommunications} onClose={() => setCommunicationsOpen(false)} />}
     </div>
   );
 }
@@ -107,7 +122,13 @@ function Dashboard({ user }: { user: AuthenticatedUser }) {
   const [, navigate] = useLocation();
   const queryClient = useQueryClient();
   const [importingStock, setImportingStock] = useState(false);
+  const [stockAlertOpen, setStockAlertOpen] = useState(false);
+  const [creditOpen, setCreditOpen] = useState(false);
   const exportStock = useMutation({ mutationFn: downloadSaStock, onError: error => toast.error(error.message) });
+  const publicExport = useMutation({ mutationFn: async () => { const answer = window.prompt("Quer adicionar sua comissão à entrada? Informe 0 para Não ou de 1 a 8 para Sim.", "0"); if (answer === null) return; const rate = Number(answer); if (!Number.isInteger(rate) || rate < 0 || rate > 8) throw new Error("Informe 0 ou uma comissão de 1% a 8%"); await downloadPublicStock(rate); }, onError: error => toast.error(error.message) });
+  const opportunities = useQuery<{ items: unknown[] }>({ queryKey: ["opportunities"], queryFn: async () => (await fetch("/api/quotes/opportunities")).json() });
+  const stockFilters = useQuery<StockFilters>({ queryKey: ["stock-filters"], queryFn: async () => (await fetch("/api/stock/filters")).json() });
+  const creditByAdministrator = useQuery<{ items: { administrator: string; total: number; categories: { category: string; credit: number }[] }[] }>({ queryKey: ["credit-by-administrator"], queryFn: async () => { const response = await fetch("/api/dashboard/credit-by-administrator"); if (!response.ok) throw new Error("Crédito indisponível"); return response.json(); }, enabled: creditOpen });
   const showInternalDashboard = user.role !== "user";
   const health = useQuery<HealthResponse>({
     queryKey: ["health"],
@@ -136,8 +157,8 @@ function Dashboard({ user }: { user: AuthenticatedUser }) {
   const cards = [
     ...(showInternalDashboard ? [{ label: "Cotas disponíveis", value: integer(metrics.data?.availableQuotas), detail: "Condições prontas para cotação", icon: PackageSearch, tone: "blue" }] : []),
     { label: "Cotações salvas", value: integer(metrics.data?.savedQuotes), detail: user.role === "admin" ? "Histórico de toda a equipe" : "Seu histórico de cotações", icon: WalletCards, tone: "gold" },
-    ...(showInternalDashboard ? [{ label: "Parceiros ativos", value: integer(metrics.data?.activePartners), detail: "Acessos ativos na plataforma", icon: Users, tone: "green" }] : []),
-    { label: "Volume disponível", value: currency(metrics.data?.availableCredit), detail: "Crédito total em estoque", icon: BarChart3, tone: "navy" },
+    ...(showInternalDashboard ? [{ label: "Parceiros ativos", value: integer(metrics.data?.activePartners), detail: "Parceiros online agora", icon: Users, tone: "green" }] : []),
+    { label: "Volume disponível", value: currency(metrics.data?.availableCredit), detail: "Consulte por administradora", icon: BarChart3, tone: "navy" },
     ...(user.role === "admin" ? [
       { label: "Pré-análises", value: integer(metrics.data?.preAnalyses), detail: "Registros recebidos", icon: FileSearch, tone: "green" },
       { label: "Pedidos de reserva", value: integer(metrics.data?.pendingReservations), detail: "Aguardando aprovação", icon: Bell, tone: "gold" },
@@ -146,11 +167,11 @@ function Dashboard({ user }: { user: AuthenticatedUser }) {
 
   return <>
     <section className="hero">
-      <div><span className="eyebrow">{user.role === "admin" ? "PAINEL ADMINISTRATIVO" : "PAINEL DO PARCEIRO"}</span><h1>Olá, {user.name.split(" ")[0]}</h1><p>Acompanhe a operação comercial da SA Capital em um só lugar.</p></div>
-      <div className="heading-actions">{["admin", "advisor"].includes(user.role) && <><button className="secondary-button" disabled={exportStock.isPending} onClick={() => exportStock.mutate()}><Download size={17} /> {exportStock.isPending ? "Gerando…" : "Baixar estoque SA"}</button><button className="secondary-button" onClick={() => setImportingStock(true)}><Upload size={17} /> Importar estoque SA</button></>}<Link href="/estoque" className="primary-button">Consultar estoque <ChevronRight size={18} /></Link></div>
+      <div><span className="eyebrow">{user.role === "admin" ? "PAINEL ADMINISTRATIVO" : "PAINEL DO PARCEIRO"}</span><h1>Olá, {user.name.split(" ")[0]}</h1><p>Acompanhe a operação comercial da SA Capital em um só lugar.</p>{user.role === "admin" && <button className="secondary-button dashboard-communication-button" onClick={() => window.dispatchEvent(new Event("open-communications-manager"))}>Criar comunicado</button>}</div>
+      <div className="heading-actions"><button className="secondary-button" onClick={() => setStockAlertOpen(true)}>Me avise!</button>{!!opportunities.data?.items.length && <Link href="/estoque?opportunities=1" className="secondary-button">Oportunidades</Link>}<Link href="/estoque" className="primary-button">Estoque <ChevronRight size={18} /></Link><button className="secondary-button" disabled={publicExport.isPending} onClick={() => publicExport.mutate()}><Download size={17} /> Baixar estoque</button>{["admin", "advisor"].includes(user.role) && <><button className="secondary-button" disabled={exportStock.isPending} onClick={() => exportStock.mutate()}>Planilha interna</button><button className="secondary-button" onClick={() => setImportingStock(true)}><Upload size={17} /> Importar</button></>}</div>
     </section>
     <section className="metrics-grid">
-      {cards.map(card => <article className="metric-card" key={card.label}><div className={`metric-icon ${card.tone}`}><card.icon size={21} /></div><span>{card.label}</span><strong>{card.value}</strong><small>{metrics.isError ? "Indicador temporariamente indisponível" : card.detail}</small></article>)}
+      {cards.map(card => <article className="metric-card" key={card.label}><div className={`metric-icon ${card.tone}`}><card.icon size={21} /></div><span>{card.label}</span><strong>{card.value}</strong><small>{metrics.isError ? "Indicador temporariamente indisponível" : card.detail}</small>{card.label === "Volume disponível" && <button type="button" className="metric-confer-button" onClick={() => setCreditOpen(true)} aria-label="Confira o crédito por administradora">Confira <ChevronRight size={16} /></button>}</article>)}
       {user.role === "admin" && <FbSyncStatus />}
     </section>
     {user.role === "admin" && reservations.data?.items.length ? <section className="panel reservation-panel"><span className="eyebrow">PEDIDOS DE RESERVA</span><h2>Aguardando aprovação</h2>{reservations.data.items.map(item => <div className="reservation-row" key={item.id} {...selectionSurface(() => navigate(`/cotacoes?id=${item.quoteId}`))} aria-label={`Consultar reserva de ${item.clientName}`}><div><strong>{item.clientName}</strong><small>{item.requesterName} • {new Date(item.createdAt).toLocaleString("pt-BR")}</small></div><button className="secondary-button" disabled={reviewReservation.isPending} onClick={() => reviewReservation.mutate({ id: item.id, status: "rejected" })}>Recusar</button><button className="primary-button button-reset" disabled={reviewReservation.isPending} onClick={() => reviewReservation.mutate({ id: item.id, status: "approved" })}>Aprovar e reservar</button></div>)}</section> : null}
@@ -168,6 +189,8 @@ function Dashboard({ user }: { user: AuthenticatedUser }) {
       </article>}
     </section>
     {importingStock && <StockImportModal onClose={() => setImportingStock(false)} />}
+    {stockAlertOpen && <StockAlertModal filters={stockFilters.data} onClose={() => setStockAlertOpen(false)} />}
+    {creditOpen && <AdministratorCreditModal items={creditByAdministrator.data?.items ?? []} loading={creditByAdministrator.isPending} error={creditByAdministrator.isError} onRetry={() => { void creditByAdministrator.refetch(); }} onClose={() => setCreditOpen(false)} />}
   </>;
 }
 
@@ -196,9 +219,10 @@ function AuthPage({ onAuthenticated }: { onAuthenticated: (user: AuthenticatedUs
   const [password, setPassword] = useState("");
   const [forgotPassword, setForgotPassword] = useState(false);
   const isSetup = setup.data?.needsSetup === true;
+  const sessionExpired = sessionStorage.getItem("sa-session-expired") === "1";
   const submit = useMutation({
     mutationFn: () => authRequest(isSetup ? "setup-admin" : "login", { ...(isSetup ? { name } : {}), email, password }),
-    onSuccess: data => onAuthenticated(data.user),
+    onSuccess: data => { sessionStorage.removeItem("sa-session-expired"); return onAuthenticated(data.user); },
   });
 
   if (setup.isLoading) return <div className="auth-loading">Preparando acesso seguro…</div>;
@@ -218,6 +242,7 @@ function AuthPage({ onAuthenticated }: { onAuthenticated: (user: AuthenticatedUs
         <label>E-mail<input type="email" autoComplete="email" value={email} onChange={event => setEmail(event.target.value)} required /></label>
         <label>Senha<input type="password" autoComplete={isSetup ? "new-password" : "current-password"} value={password} onChange={event => setPassword(event.target.value)} minLength={8} required /></label>
         {isSetup && <small className="password-help">Use pelo menos 8 caracteres. Prefira uma frase longa e exclusiva.</small>}
+        {sessionExpired && <div className="auth-error" role="alert">Sua sessão foi encerrada após 1 hora de inatividade. Entre novamente.</div>}
         {submit.error && <div className="auth-error" role="alert">{submit.error.message}</div>}
         {setup.isError && <div className="auth-error" role="alert">Não foi possível consultar o banco de dados.</div>}
         <button className="auth-submit" disabled={submit.isPending || setup.isError}>{submit.isPending ? "Aguarde…" : isSetup ? "Criar acesso administrativo" : "Entrar"}</button>
@@ -230,6 +255,7 @@ function AuthPage({ onAuthenticated }: { onAuthenticated: (user: AuthenticatedUs
 
 function App() {
   const queryClient = useQueryClient();
+  const [essentialStorageAccepted, setEssentialStorageAccepted] = useState(() => { try { return localStorage.getItem(essentialStorageKey) === "accepted"; } catch { return false; } });
   const me = useQuery<AuthenticatedUser | null>({
     queryKey: ["current-user"],
     queryFn: async ({ signal }) => {
@@ -245,15 +271,18 @@ function App() {
     await updateSessionCache(queryClient, null);
     sessionStorage.removeItem("sa-capital-selected-quotas");
   };
+  useEffect(()=>{if(!me.data)return;let timer:number;const expire=()=>{void authRequest("logout",{}).finally(()=>{sessionStorage.setItem("sa-session-expired","1");void updateSessionCache(queryClient,null)})};const reset=()=>{window.clearTimeout(timer);timer=window.setTimeout(expire,60*60_000)};const events=["pointerdown","keydown","scroll","touchstart"] as const;events.forEach(name=>window.addEventListener(name,reset,{passive:true}));reset();return()=>{window.clearTimeout(timer);events.forEach(name=>window.removeEventListener(name,reset))}},[me.data,queryClient]);
 
   const resetToken = window.location.pathname === "/reset-password" ? new URLSearchParams(window.location.search).get("token") : null;
 
   if (resetToken) return <ResetPasswordPage token={resetToken} />;
   if (me.isLoading) return <div className="auth-loading">Validando sessão…</div>;
+  if (!me.data && window.location.pathname === "/") return <LandingPage />;
   if (!me.data) return <AuthPage onAuthenticated={async user => { sessionStorage.removeItem("sa-capital-selected-quotas"); await updateSessionCache(queryClient, user); }} />;
   if (me.data.mustChangePassword) return <ChangePasswordPage user={me.data} mandatory onChanged={user => queryClient.setQueryData(["current-user"], user)} />;
+  if (!essentialStorageAccepted) return <EssentialStorageGate onAccept={() => { localStorage.setItem(essentialStorageKey, "accepted"); setEssentialStorageAccepted(true); }} onLogout={logout}/>;
 
-  return <AppShell user={me.data} onLogout={logout}><Switch><Route path="/">{() => <Dashboard user={me.data!} />}</Route><Route path="/estoque">{() => <StockPage user={me.data!} />}</Route><Route path="/cotacoes" component={QuotesPage} /><Route path="/negociacoes">{() => <NegotiationsPage user={me.data!} />}</Route><Route path="/auditoria">{() => me.data!.role === "admin" ? <AuditPage /> : <StockPage user={me.data!} />}</Route> <Route path="/administradoras">
+  return <AppShell user={me.data} onLogout={logout}><Switch><Route path="/">{() => <Dashboard user={me.data!} />}</Route><Route path="/estoque">{() => <StockPage user={me.data!} />}</Route><Route path="/cotacoes" component={QuotesPage} /><Route path="/negociacoes">{() => <NegotiationsPage user={me.data!} />}</Route><Route path="/crm">{() => <CrmPage user={me.data!} />}</Route><Route path="/auditoria">{() => me.data!.role === "admin" ? <AuditPage /> : <StockPage user={me.data!} />}</Route> <Route path="/administradoras">
   {() => (
     <AdministradorasPage isAdmin={me.data!.role === "admin"} />
   )}

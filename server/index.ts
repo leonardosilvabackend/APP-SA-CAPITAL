@@ -1,4 +1,5 @@
 import { observeRequest, operationalMetrics, readinessProbe } from "./observability";
+import { securityHeaders } from "./security-headers";
 import { sql } from "drizzle-orm";
 import { getDatabase } from "./db/client";
 import { processEmailJobs } from "./email-queue";
@@ -24,6 +25,10 @@ import { backfillNegotiations } from "./negotiations/service";
 import { cleanupExpiredNotifications, notificationsRouter } from "./notifications/routes";
 import { auditRouter } from "./audit/routes";
 import { profileRouter } from "./profile/routes";
+import { integrationsRouter } from "./integrations/routes";
+import { partnerApiRouter } from "./partner-api";
+import { crmRouter } from "./crm/routes";
+import { communicationsRouter } from "./communications/routes";
 import { cleanupExpiredStockReservations } from "./stock/reservation-expiry";
 
 assertDatabaseSafety();
@@ -33,12 +38,14 @@ if (config.emailEnabled && (!config.resendApiKey || !config.resendFromEmail)) th
 console.log(`SA Capital\nAmbiente: ${config.appEnv.toUpperCase()}\nBanco: ${config.databaseEnv.toUpperCase()}\nE-mails: ${config.emailEnabled ? "HABILITADOS" : "DESABILITADOS"}\nJobs automáticos: ${config.scheduledJobsEnabled ? "HABILITADOS" : "DESABILITADOS"}\nSincronização FB: ${config.fbSyncEnabled ? "HABILITADA" : "DESABILITADA"}`);
 const app = express();
 app.disable("x-powered-by");
+app.use(securityHeaders);
 app.use("/api", observeRequest);
 app.set("trust proxy", config.trustProxyHops);
 app.use("/api/administrators", administratorsRouter);
 app.use("/api/negotiations", negotiationsRouter);
 app.use("/api/stock", stockRouter);
 app.use("/api/profile", profileRouter);
+app.use("/api/v1", partnerApiRouter);
 app.use(express.json({ limit: "2mb" }));
 app.use("/api/auth", authRouter);
 app.use("/api/users", usersRouter);
@@ -48,9 +55,12 @@ app.use("/api/pre-analyses", preAnalysesRouter);
 app.use("/api/settings", settingsRouter);
 app.use("/api/notifications", notificationsRouter);
 app.use("/api/audit", auditRouter);
+app.use("/api/integrations", integrationsRouter);
+app.use("/api/crm", crmRouter);
+app.use("/api/communications", communicationsRouter);
 
 const checkReady = readinessProbe(async () => {
-  await getDatabase()!.execute(sql`select (select count(*) from auth_rate_limits where false), (select count(*) from email_jobs where false), (select count(*) from notifications where false)`);
+  await getDatabase()!.execute(sql`select (select count(*) from auth_rate_limits where false), (select count(*) from email_jobs where false), (select count(*) from notifications where false), (select desired_credit from stock_alert_preferences where false), (select count(*) from communications where false), (select count(*) from crm_activities where false), (select count(*) from partner_api_keys where false)`);
 });
 app.get("/api/ready", async (_req, res) => {
   try { await checkReady(); res.json({ status: "ready", environment: config.appEnv }); }

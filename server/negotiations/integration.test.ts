@@ -30,6 +30,8 @@ import { queueStatusEmail, processEmailJobs } from "../email-queue";
 import { sendStatusEmail } from "../email";
 import { persistedFbStatus } from "../stock/fb-monitor";
 import { notificationsRouter } from "../notifications/routes";
+import { integrationsRouter } from "../integrations/routes";
+import { partnerApiRouter } from "../partner-api";
 vi.mock("../email", () => ({ sendStatusEmail: vi.fn() }));
 
 const suite = process.env.RUN_NEGOTIATION_DB_TESTS === "1" ? describe : describe.skip;
@@ -71,13 +73,14 @@ suite("negotiations with PostgreSQL", () => {
       await client.begin(async tx => { for (const statement of content.split("--> statement-breakpoint").filter(part => part.trim())) await tx.unsafe(statement); });
     }
     async function user(role: "admin" | "user" | "advisor", managerId?: string) {
-      return (await db.insert(schema.users).values({ name: role, email: `${crypto.randomUUID()}@example.invalid`, passwordHash: "test-only", role, managerId }).returning())[0];
+      return (await db.insert(schema.users).values({ organizationId: '00000000-0000-4000-8000-000000000001', name: role, email: `${crypto.randomUUID()}@example.invalid`, passwordHash: "test-only", role, managerId }).returning())[0];
     }
     admin = await user("admin"); advisor = await user("advisor"); owner = await user("user", advisor.id); outsider = await user("user");
     state.user = admin;
     config.supabaseUrl ||= "https://example.supabase.co"; config.supabaseServiceRoleKey ||= "test-only";
     const app = express(); app.use("/api/negotiations", negotiationsRouter);
     app.use(express.json()); app.use("/api/stock", stockRouter); app.use("/api/quotes", quotesRouter); app.use("/api/users", usersRouter); app.use("/api/pre-analyses", preAnalysesRouter); app.use("/api/notifications", notificationsRouter);
+    app.use('/api/integrations', integrationsRouter); app.use('/api/v1', partnerApiRouter);
     app.use((error: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => res.status(500).json({ error: error.message }));
     server = await new Promise<Server>(resolve => { const instance = app.listen(0, "127.0.0.1", () => resolve(instance)); });
     base = `http://127.0.0.1:${(server.address() as { port: number }).port}/api/negotiations`;
@@ -91,6 +94,33 @@ suite("negotiations with PostgreSQL", () => {
       await adminClient.end();
     }
   }, 30000);
+  it('rotates partner keys atomically, limits concurrent access and blocks inactive owners', async () => {
+    state.user=owner;
+    const root=base.replace('/api/negotiations','');
+    const generate=async()=>{const response=await fetch(root+'/api/integrations/stock-api',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({commissionRate:2})});expect(response.status).toBe(201);return (await response.json()).token as string};
+    const stockRequest=(token:string)=>fetch(root+'/api/v1/stock',{headers:{Authorization:`Bearer ${token}`}});
+    const first=await generate();
+    expect((await stockRequest(first)).status).toBe(200);
+    const keys=await Promise.all([generate(),generate()]);
+    const statuses=await Promise.all(keys.map(async token=>(await stockRequest(token)).status));
+    expect(statuses.sort()).toEqual([200,401]);
+    expect((await stockRequest(first)).status).toBe(401);
+    const current=await generate();
+    const burst=await Promise.all(Array.from({length:65},async()=>(await stockRequest(current)).status));
+    expect(burst.filter(status=>status===200)).toHaveLength(60);
+    expect(burst.filter(status=>status===429)).toHaveLength(5);
+    const fresh=await generate();
+    await db.update(schema.users).set({status:'inactive'}).where(eq(schema.users.id,owner.id));
+    expect((await stockRequest(fresh)).status).toBe(401);
+    await db.update(schema.users).set({status:'active'}).where(eq(schema.users.id,owner.id));
+    state.user=outsider;
+    await fetch(root+'/api/integrations/stock-api',{method:'DELETE'});
+    expect((await stockRequest(fresh)).status).toBe(200);
+    state.user=owner;
+    await fetch(root+'/api/integrations/stock-api',{method:'DELETE'});
+    expect((await stockRequest(fresh)).status).toBe(401);
+    state.user=admin;
+  });
   it("creates the first negotiation on approval and is idempotent", async () => {
     const data = await fixture(); reservationId = data.reservation.id; quoteId = data.quote.id;
     const result = await reviewReservation(reservationId, "approved", admin.id);

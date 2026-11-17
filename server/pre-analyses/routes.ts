@@ -5,25 +5,23 @@ import { z } from "zod";
 import { validateFile } from "../files/validation";
 import { AnalysisError, validateSubmission } from "./submission";
 import { ownershipScope } from "../auth/ownership";
-import { createClient } from "@supabase/supabase-js";
 import { and, desc, eq, inArray, lt, or } from "drizzle-orm";
 import express, { Router, type NextFunction, type Request, type RequestHandler, type Response } from "express";
 import { createPreAnalysisSchema, updatePreAnalysisSchema } from "../../shared/contracts";
 import { getCurrentUser } from "../auth/current-user";
-import { config } from "../config";
 import { getDatabase } from "../db/client";
 import { appSettings, preAnalyses, preAnalysisDocuments, users } from "../db/schema";
 import { incomeCatalog } from "../../shared/income-catalog";
 import { defaultIncomeDocuments } from "../../shared/business";
+import { storageIsConfigured, storageProvider } from "../storage/provider";
 export const preAnalysesRouter=Router();
 for (const name of ["id", "documentId"]) preAnalysesRouter.param(name, (_req, res, next, value) => {
   if (!z.string().uuid().safeParse(value).success) { res.status(400).json({ error: "Identificador invalido" }); return; }
   next();
 });
-const storage=()=>createClient(config.supabaseUrl,config.supabaseServiceRoleKey,{auth:{persistSession:false}}).storage.from(config.storageBucket);
 function asyncRoute(handler:(req:Request,res:Response,next:NextFunction)=>Promise<unknown>):RequestHandler{return(req,res,next)=>{void handler(req,res,next).catch(error => { if (error instanceof AnalysisError) res.status(error.status).json({ error: error.message }); else next(error); });};}
 function scope(user: NonNullable<Awaited<ReturnType<typeof getCurrentUser>>>) { return ownershipScope(preAnalyses.partnerId, user, true); }
-export async function cleanupExpiredDocuments(){const db=getDatabase();if(!db||!config.supabaseUrl||!config.supabaseServiceRoleKey)return;const expired=await db.select().from(preAnalysisDocuments).where(lt(preAnalysisDocuments.expiresAt,new Date()));if(expired.length){const removed = await storage().remove(expired.map(d=>d.storagePath));if(removed.error) throw new Error("Document cleanup failed; records preserved for retry");await db.delete(preAnalysisDocuments).where(inArray(preAnalysisDocuments.id,expired.map(d=>d.id)));}}
+export async function cleanupExpiredDocuments(){const db=getDatabase();if(!db||!storageIsConfigured())return;const expired=await db.select().from(preAnalysisDocuments).where(lt(preAnalysisDocuments.expiresAt,new Date()));if(expired.length){const removed = await storageProvider().remove(expired.map(d=>d.storagePath));if(removed.error) throw new Error("Document cleanup failed; records preserved for retry");await db.delete(preAnalysisDocuments).where(inArray(preAnalysisDocuments.id,expired.map(d=>d.id)));}}
 preAnalysesRouter.delete("/:id", asyncRoute(async (req, res) => {
   const user = await getCurrentUser(req);
   if (!user) return res.status(401).json({ error: "Faça login" });
@@ -86,7 +84,7 @@ const authorizeUpload = asyncRoute(async (req, res, next) => {
   next();
 });
 preAnalysesRouter.post("/:id/documents", authorizeUpload, express.raw({ type: ["application/pdf", "image/jpeg", "image/png"], limit: "25mb" }), asyncRoute(async (req, res) => {
-  if (!config.supabaseUrl || !config.supabaseServiceRoleKey) return res.status(503).json({ error: "Armazenamento privado nao configurado" });
+  if (!storageIsConfigured()) return res.status(503).json({ error: "Armazenamento privado nao configurado" });
   const mime = req.headers["content-type"]?.split(";")[0] ?? "";
   const body = Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0);
   const fileName = decodeURIComponent(String(req.headers["x-file-name"] ?? "documento")).replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 255);
@@ -97,7 +95,7 @@ preAnalysesRouter.post("/:id/documents", authorizeUpload, express.raw({ type: ["
     const [settings] = await getDatabase()!.select().from(appSettings).where(eq(appSettings.id, "default"));
     if (!settings?.allowedFileTypes.includes(mime)) throw new AnalysisError(400, "Tipo de arquivo nao permitido");
     validateFile(body, mime, settings.maxFileSizeMb * 1024 * 1024);
-    const result = await storage().upload(path, body, { contentType: mime, upsert: false });
+    const result = await storageProvider().upload(path, body, { contentType: mime, upsert: false });
     if (result.error) throw new AnalysisError(502, "Nao foi possivel enviar o documento");
     uploaded = true;
     const document = await getDatabase()!.transaction(async tx => {
@@ -116,7 +114,7 @@ preAnalysesRouter.post("/:id/documents", authorizeUpload, express.raw({ type: ["
     });
     return res.status(201).json({ document: { ...document, storagePath: undefined } });
   } catch (error) {
-    if (uploaded) { await queueStorageCleanup([path]); const result = await storage().remove([path]).catch(() => ({ error: true })); if (result.error) console.error("[Storage] Falha na compensacao de upload", path); }
+    if (uploaded) { await queueStorageCleanup([path]); const result = await storageProvider().remove([path]).catch(() => ({ error: { message: "remove failed" } })); if (result.error) console.error("[Storage] Falha na compensacao de upload", path); }
     throw error;
   }
 }));
@@ -125,9 +123,9 @@ preAnalysesRouter.get("/:id/documents/:documentId", asyncRoute(async (req, res) 
   const [doc] = await getDatabase()!.select({ path: preAnalysisDocuments.storagePath, name: preAnalysisDocuments.fileName, expiresAt: preAnalysisDocuments.expiresAt }).from(preAnalysisDocuments).innerJoin(preAnalyses, eq(preAnalysisDocuments.preAnalysisId, preAnalyses.id)).where(and(eq(preAnalysisDocuments.id, req.params.documentId), eq(preAnalyses.id, req.params.id), scope(user)));
   if (!doc) return res.status(404).json({ error: "Documento nao encontrado" });
   if (doc.expiresAt && doc.expiresAt <= new Date()) return res.status(410).json({ error: "Documento expirado" });
-  if (!config.supabaseUrl || !config.supabaseServiceRoleKey) return res.status(503).json({ error: "Armazenamento privado nao configurado" });
-  const signed = await storage().createSignedUrl(doc.path, 60, { download: doc.name });
-  if (signed.error) return res.status(502).json({ error: "Nao foi possivel abrir o documento" });
+  if (!storageIsConfigured()) return res.status(503).json({ error: "Armazenamento privado nao configurado" });
+  const signed = await storageProvider().createSignedUrl(doc.path, 60, { download: doc.name });
+  if (signed.error || !signed.data) return res.status(502).json({ error: "Nao foi possivel abrir o documento" });
   res.setHeader("Cache-Control", "private, no-store");
   return res.json({ url: signed.data.signedUrl });
 }));

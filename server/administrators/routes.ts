@@ -1,15 +1,13 @@
 import { validateFile } from "../files/validation";
-import { createClient } from "@supabase/supabase-js";
 import { asc, eq } from "drizzle-orm";
 import express, { Router, type Request, type Response, type NextFunction, type RequestHandler } from "express";
 import { administratorInputSchema, type AdministratorFile } from "../../shared/administrators";
 import { getCurrentUser } from "../auth/current-user";
-import { config } from "../config";
 import { getDatabase } from "../db/client";
 import { administrators } from "../db/schema";
+import { storageIsConfigured, storageProvider } from "../storage/provider";
 
 export const administratorsRouter = Router();
-const storage = () => createClient(config.supabaseUrl, config.supabaseServiceRoleKey, { auth: { persistSession: false } }).storage.from(config.storageBucket);
 function asyncRoute(handler: (req: Request, res: Response, next: NextFunction) => Promise<unknown>): RequestHandler {
   return (req, res, next) => { void handler(req, res, next).catch(next); };
 }
@@ -38,32 +36,32 @@ const saveAdministrator = asyncRoute(async (req, res) => {
   const parsed = administratorInputSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0]?.message });
   const { logo, documents, ...fields } = parsed.data;
-  if ((logo || documents.length) && (!config.supabaseUrl || !config.supabaseServiceRoleKey)) return res.status(503).json({ error: "Armazenamento de arquivos não configurado" });
+  if ((logo || documents.length) && !storageIsConfigured()) return res.status(503).json({ error: "Armazenamento de arquivos não configurado" });
   if ((existing?.documents.length ?? 0) + documents.length > 10) return res.status(400).json({ error: "A administradora pode ter até 10 documentos" });
   const id = existing?.id ?? crypto.randomUUID();
   const uploaded: string[] = [];
-  async function upload(file: (typeof documents)[number]): Promise<AdministratorFile> {
+  async function upload(file: (typeof documents)[number], maxBytes = 10 * 1024 * 1024): Promise<AdministratorFile> {
     const fileId = crypto.randomUUID();
     const storagePath = `administrators/${id}/${fileId}`;
     const buffer = Buffer.from(file.base64, "base64");
-    validateFile(buffer, file.mimeType, 10 * 1024 * 1024);
-    const result = await storage().upload(storagePath, buffer, { contentType: file.mimeType, upsert: false });
+    validateFile(buffer, file.mimeType, maxBytes);
+    const result = await storageProvider().upload(storagePath, buffer, { contentType: file.mimeType, upsert: false });
     if (result.error) throw new Error("Não foi possível enviar os arquivos da administradora");
     uploaded.push(storagePath);
     return { id: fileId, name: file.name, mimeType: file.mimeType, storagePath };
   }
   try {
-    const savedLogo = logo ? await upload(logo) : existing?.logo ?? null;
+    const savedLogo = logo ? await upload(logo, 500 * 1024) : existing?.logo ?? null;
     const savedDocuments: AdministratorFile[] = [...(existing?.documents ?? [])];
     for (const file of documents) savedDocuments.push(await upload(file));
     const values = { ...fields, website: fields.website || null, logo: savedLogo, documents: savedDocuments };
     const [item] = existing
       ? await getDatabase()!.update(administrators).set(values).where(eq(administrators.id, id)).returning()
       : await getDatabase()!.insert(administrators).values({ id, ...values }).returning();
-    if (logo && existing?.logo) await storage().remove([existing.logo.storagePath]).catch(() => undefined);
+    if (logo && existing?.logo) await storageProvider().remove([existing.logo.storagePath]).catch(() => undefined);
     return res.status(existing ? 200 : 201).json({ item: serialize(item) });
   } catch (error) {
-    if (uploaded.length) await storage().remove(uploaded).catch(() => undefined);
+    if (uploaded.length) await storageProvider().remove(uploaded).catch(() => undefined);
     throw error;
   }
 });
@@ -74,9 +72,10 @@ administratorsRouter.get("/:id/files/:fileId", asyncRoute(async (req, res) => {
   const [item] = await getDatabase()!.select().from(administrators).where(eq(administrators.id, req.params.id)).limit(1);
   const file = item && [item.logo, ...item.documents].find(file => file?.id === req.params.fileId);
   if (!file) return res.status(404).json({ error: "Arquivo não encontrado" });
-  if (!config.supabaseUrl || !config.supabaseServiceRoleKey) return res.status(503).json({ error: "Armazenamento de arquivos não configurado" });
-  const result = await storage().createSignedUrl(file.storagePath, 60, item.logo?.id === file.id ? undefined : { download: file.name });
-  if (result.error) return res.status(502).json({ error: "Não foi possível abrir o arquivo" });
-  res.setHeader("Cache-Control", "private, no-store");
+  if (!storageIsConfigured()) return res.status(503).json({ error: "Armazenamento de arquivos não configurado" });
+  const isLogo = item.logo?.id === file.id;
+  const result = await storageProvider().createSignedUrl(file.storagePath, isLogo ? 86_400 : 300, isLogo ? undefined : { download: file.name });
+  if (result.error || !result.data) return res.status(502).json({ error: "Não foi possível abrir o arquivo" });
+  res.setHeader("Cache-Control", isLogo ? "private, max-age=86400, immutable" : "private, no-store");
   return res.redirect(result.data.signedUrl);
 }));

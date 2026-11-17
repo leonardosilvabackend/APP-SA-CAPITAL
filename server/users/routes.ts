@@ -1,11 +1,11 @@
-import { and, asc, eq, or, sql } from "drizzle-orm";
+import { and, asc, eq, gt, inArray, isNull, or, sql } from "drizzle-orm";
 import { Router, type NextFunction, type Request, type RequestHandler, type Response } from "express";
 import { z } from "zod";
 import { createUserInputSchema, updateUserInputSchema, DEFAULT_USER_PASSWORD } from "../../shared/contracts";
 import { getCurrentUser } from "../auth/current-user";
 import { hashPassword } from "../auth/password";
 import { getDatabase } from "../db/client";
-import { users, passwordResetTokens } from "../db/schema";
+import { authSessions, users, passwordResetTokens } from "../db/schema";
 
 export const usersRouter = Router();
 function asyncRoute(handler: (req: Request, res: Response, next: NextFunction) => Promise<unknown>): RequestHandler { return (req, res, next) => { void handler(req, res, next).catch(next); }; }
@@ -16,7 +16,8 @@ usersRouter.get("/", asyncRoute(async (req, res) => {
   const current = await manager(req, res); if (!current) return;
   const db = getDatabase(); if (!db) return res.status(503).json({ error: "Banco de dados não configurado" });
   const result = current.role === "admin" ? await db.select().from(users).orderBy(asc(users.name)) : await db.select().from(users).where(or(eq(users.id, current.id), eq(users.managerId, current.id))).orderBy(asc(users.name));
-  return res.json({ users: result.map(publicUser) });
+  const sessions=result.length?await db.select().from(authSessions).where(and(inArray(authSessions.userId,result.map(x=>x.id)),isNull(authSessions.revokedAt),gt(authSessions.lastActivityAt,new Date(Date.now()-60*60_000)),gt(authSessions.expiresAt,new Date()))):[];
+  return res.json({ users: result.map(user=>({...publicUser(user),online:sessions.some(s=>s.userId===user.id),lastActivityAt:sessions.filter(s=>s.userId===user.id).sort((a,b)=>b.lastActivityAt.getTime()-a.lastActivityAt.getTime())[0]?.lastActivityAt??null})) });
 }));
 
 usersRouter.post("/", asyncRoute(async (req, res) => {
@@ -27,7 +28,7 @@ usersRouter.post("/", asyncRoute(async (req, res) => {
   let managerId = current.role === "advisor" ? current.id : parsed.data.managerId ?? null;
   if (parsed.data.role === "user" && managerId) { const [advisor] = await db.select({ id: users.id }).from(users).where(and(eq(users.id, managerId), eq(users.role, "advisor"))).limit(1); if (!advisor) return res.status(400).json({ error: "Selecione um assessor válido" }); }
   if (parsed.data.role !== "user") managerId = null;
-  try { const passwordHash = await hashPassword(DEFAULT_USER_PASSWORD); const [created] = await db.insert(users).values({ name: parsed.data.name, email: parsed.data.email, phone: parsed.data.phone || null, passwordHash, role: parsed.data.role, managerId, mustChangePassword: true }).returning(); return res.status(201).json({ user: publicUser(created) }); }
+  try { const passwordHash = await hashPassword(DEFAULT_USER_PASSWORD); const [created] = await db.insert(users).values({ organizationId: current.organizationId, name: parsed.data.name, email: parsed.data.email, phone: parsed.data.phone || null, passwordHash, role: parsed.data.role, managerId, mustChangePassword: true }).returning(); return res.status(201).json({ user: publicUser(created) }); }
   catch (error) { if (typeof error === "object" && error && "code" in error && error.code === "23505") return res.status(409).json({ error: "Já existe um usuário com este e-mail" }); throw error; }
 }));
 

@@ -14,7 +14,7 @@ vi.mock("../db/client", () => ({ getDatabase: () => ({ select: () => ({ from: ()
 import { stockRouter } from "./routes";
 let server: Server;
 let url: string;
-const input = { category: "Imóvel", administrator: "", targetCredit: 500000, priority: "entry" };
+const input = { category: "Imóvel", administrator: "__all__", targetCredit: 500000, priority: "entry" };
 const item = { id: "one", code: "0001", category: "Imóvel", administrator: "Porto", installmentCount: 120, installmentAmount: "1000.00", outstandingBalance: "300000.00", creditAmount: "490000.00", entryAmount: "100000.00", supplier: "Privado" };
 beforeEach(async () => {
   state.user = { role: "admin" }; state.where = null;
@@ -43,7 +43,7 @@ it("adds the specific administrator filter", async () => {
 it("returns no opportunity without falling back to out-of-range stock", async () => {
   state.query.mockResolvedValue([]);
   const response = await request();
-  expect(await response.json()).toEqual({ items: [], summary: null, complete: true, priority: "entry", options: [] });
+  expect(await response.json()).toEqual({ items: [], summary: null, complete: true, priority: "entry", options: [], fallback: false });
   expect(state.query).toHaveBeenCalledOnce();
 });
 it("requires a criterion, category and positive finite numeric credit", () => {
@@ -68,4 +68,12 @@ it("requires authentication", async () => {
   state.user = null;
   expect((await request()).status).toBe(401);
   expect(state.query).not.toHaveBeenCalled();
+});
+it("accepts the all-administrators payload after client validation", async () => {
+  const payload = smartSearchInputSchema.parse(input);
+  expect(payload.administrator).toBe("");
+  const response = await request(payload);
+  expect(response.status).toBe(200);
+  expect((await response.json()).options).toHaveLength(1);
+  expect(compile(state.where).sql).not.toContain('"administrator"');
 });

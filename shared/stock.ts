@@ -22,12 +22,14 @@ export function normalizeQuotaCategory(value: string) {
 export const quotaStatusSchema = z.enum(["available", "reserved"]);
 
 export const smartSearchInputSchema = z.object({
-  administrator: z.string().trim().max(160).default(""),
+  administrator: z.string().trim().max(160).default("").transform(value => value === "__all__" ? "" : value),
   category: z.string().trim().min(1, "Selecione a categoria").max(80),
   targetCredit: z.number().finite().positive("Informe o crédito desejado").max(999999999999.99).multipleOf(0.01, "Informe o crédito com até duas casas decimais"),
   priority: z.enum(["entry", "installment", "balance"], { error: "Selecione o critério decisor" }),
   secondaryAmount: z.number().finite().nonnegative("Informe um orçamento válido").max(999999999999.99).multipleOf(0.01).optional(),
 });
+export const specificSearchInputSchema=z.object({administrator:z.string().trim().min(1),category:z.string().trim().min(1),targetCredit:z.number().positive().max(5_000_000).optional(),maxEntry:z.number().positive().max(3_500_000).optional(),maxInstallment:z.number().positive().max(200_000).optional(),maxBalance:z.number().positive().max(8_000_000).optional()});
+export type SpecificSearchInput=z.infer<typeof specificSearchInputSchema>;
 export type SmartSearchInput = z.infer<typeof smartSearchInputSchema>;
 
 export const quotaInputSchema = z.object({
@@ -42,6 +44,8 @@ export const quotaInputSchema = z.object({
   outstandingBalance: z.preprocess(parseBrazilianNumber, z.number().finite()),
   status: quotaStatusSchema.default("available"),
   featured: z.boolean().default(false),
+  bidCollateral: z.boolean().default(false),
+  bidFgts: z.boolean().default(false),
 });
 
 export const quotaUpdateSchema = quotaInputSchema.partial().refine(value => Object.keys(value).length > 0, "Informe ao menos uma alteração");

@@ -4,6 +4,7 @@ import { calculateQuote } from "../../shared/quote";
 import { getDatabase } from "../db/client";
 import { negotiations, notifications, quotas, reservationRequests, savedQuotes } from "../db/schema";
 import { notificationExpiry } from "../notifications/routes";
+import { syncApprovedNegotiation } from "../crm/service";
 
 export class NegotiationError extends Error {
   constructor(public status: number, message: string) { super(message); }
@@ -42,6 +43,7 @@ export async function reviewReservation(id: string, status: "approved" | "reject
     if (reservation.status !== "pending") {
       if (reservation.status !== status) throw new NegotiationError(409, "Esta reserva já foi revisada");
       const [negotiation] = await tx.select().from(negotiations).where(eq(negotiations.reservationId, id));
+      if (status === "approved" && negotiation) await syncApprovedNegotiation(tx, negotiation, reviewerId);
       return { item: reservation, negotiation: negotiation ? { id: negotiation.id, code: negotiation.code } : null };
     }
     if (quote.expiresAt <= new Date()) throw new NegotiationError(409, "A cotação expirou. Gere uma nova cotação");
@@ -62,6 +64,7 @@ export async function reviewReservation(id: string, status: "approved" | "reject
     }
     const [item] = await tx.update(reservationRequests).set({ status, reviewedBy: reviewerId, reviewedAt: new Date() }).where(eq(reservationRequests.id, id)).returning();
     const negotiation = status === "approved" ? await createNegotiation(tx, item, quote) : null;
+    if (negotiation) await syncApprovedNegotiation(tx, negotiation, reviewerId);
     const codes = quote.selectedQuotas.map(quota => quota.code).join(", ");
     await tx.insert(notifications).values({ recipientId: reservation.requesterId, title: status === "approved" ? "Reserva aprovada" : "Reserva reprovada", message: status === "approved" ? `Sua solicitação de reserva das cotas: ${codes}, foi aprovada!` : `Sua reserva das cotas: ${codes}, foi reprovada.`, link: status === "approved" && negotiation ? `/negociacoes?id=${negotiation.id}` : `/cotacoes?id=${quote.id}`, expiresAt: notificationExpiry() });
     if (status === "approved") {
@@ -85,7 +88,10 @@ export async function backfillNegotiations() {
     const rows = await tx.select({ reservation: reservationRequests, quote: savedQuotes }).from(reservationRequests)
       .innerJoin(savedQuotes, eq(savedQuotes.id, reservationRequests.quoteId))
       .where(eq(reservationRequests.status, "approved")).orderBy(asc(reservationRequests.reviewedAt));
-    for (const row of rows) await createNegotiation(tx, row.reservation, row.quote);
+    for (const row of rows) {
+      const negotiation = await createNegotiation(tx, row.reservation, row.quote);
+      if (negotiation) await syncApprovedNegotiation(tx, negotiation, row.reservation.reviewedBy ?? row.reservation.requesterId);
+    }
     return rows.length;
   });
 }

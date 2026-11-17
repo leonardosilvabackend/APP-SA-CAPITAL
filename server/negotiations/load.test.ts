@@ -55,7 +55,7 @@ suite("isolated Phase 2 load", () => {
       await client.begin(async tx => { for (const statement of content.split("--> statement-breakpoint").filter(part => part.trim())) await tx.unsafe(statement); });
     }
     async function user(role: "admin" | "user" | "advisor", managerId?: string) {
-      return (await db.insert(schema.users).values({ name: role, email: `${crypto.randomUUID()}@example.invalid`, passwordHash: "test-only", role, managerId }).returning())[0];
+      return (await db.insert(schema.users).values({ organizationId: '00000000-0000-4000-8000-000000000001', name: role, email: `${crypto.randomUUID()}@example.invalid`, passwordHash: "test-only", role, managerId }).returning())[0];
     }
     admin = await user("admin"); advisor = await user("advisor"); owner = await user("user", advisor.id); outsider = await user("user");
     state.user = admin;
@@ -79,7 +79,7 @@ suite("isolated Phase 2 load", () => {
   it("measures 20, 50 and 100 simultaneous users", async () => {
     const label = process.env.LOAD_LABEL ?? "baseline";
     if (!/^[a-z0-9-]+$/.test(label)) throw new Error("Invalid report name");
-    const people = await db.insert(schema.users).values(Array.from({ length: 100 }, (_, i) => ({ name: `Load ${i}`, email: `load${i}@example.invalid`, passwordHash: "load-only", role: "admin" as const }))).returning();
+    const people = await db.insert(schema.users).values(Array.from({ length: 100 }, (_, i) => ({ organizationId: '00000000-0000-4000-8000-000000000001', name: `Load ${i}`, email: `load${i}@example.invalid`, passwordHash: "load-only", role: "admin" as const }))).returning();
     const stock = [] as (typeof schema.quotas.$inferSelect)[];
     for (let start = 0; start < 1000; start += 100) stock.push(...await db.insert(schema.quotas).values(Array.from({length:100}, (_,i)=>({code:`LOAD-${start+i}`,category:"Auto",administrator:`Admin ${i%5}`,creditAmount:String(10000+(start+i)*17),entryAmount:"2000",installmentAmount:"300",installmentCount:100,outstandingBalance:"30000"}))).returning());
     for (let start=0;start<1000;start+=100) {
@@ -136,5 +136,10 @@ suite("isolated Phase 2 load", () => {
     vi.unstubAllGlobals();
     await mkdir('.local/phase2',{recursive:true});await writeFile(`.local/phase2/${label}.json`,JSON.stringify({label,variedSearch:process.env.LOAD_VARIETY==='1',date:new Date(),node:process.version,cpu:os.cpus()[0]?.model,cores:os.cpus().length,totalMemoryMB:os.totalmem()/1024/1024,fixture:{users:100,stock:1000,quotes:1000,negotiations:1000,importRows},plans,results},null,2));
     console.log(JSON.stringify(results));
+    // A completed measurement is not an acceptance pass when clients timed out.
+    for (const result of results) for (const [endpoint, metric] of Object.entries(result.endpoints)) {
+      expect(metric.status.network ?? 0, `${endpoint} network failures at ${result.concurrency} users`).toBe(0);
+      expect(Object.entries(metric.status).filter(([status]) => Number(status) >= 500).reduce((sum, [,count]) => sum + count, 0), `${endpoint} server failures`).toBe(0);
+    }
   },240000);
 });

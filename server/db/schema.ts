@@ -1,4 +1,4 @@
-import { boolean, index, integer, jsonb, numeric, pgEnum, pgSequence, pgTable, text, timestamp, uuid, varchar, type AnyPgColumn } from "drizzle-orm/pg-core";
+import { boolean, index, integer, jsonb, numeric, pgEnum, pgSequence, pgTable, text, timestamp, uniqueIndex, uuid, varchar, type AnyPgColumn } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import type { negotiationStatuses } from "../../shared/negotiations";
 import type { CalculationQuota } from "../../shared/quote";
@@ -62,10 +62,19 @@ export const userRole = pgEnum("user_role", ["admin", "partner", "administrative
 export const userStatus = pgEnum("user_status", ["active", "inactive"]);
 export const quotaStatus = pgEnum("quota_status", ["available", "reserved", "sold"]);
 
+export const organizations = pgTable("organizations", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  name: varchar("name", { length: 160 }).notNull(),
+  slug: varchar("slug", { length: 100 }).notNull().unique(),
+  active: boolean("active").notNull().default(true),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
 export const users = pgTable("users", {
   id: uuid("id").defaultRandom().primaryKey(),
   name: varchar("name", { length: 160 }).notNull(),
   email: varchar("email", { length: 320 }).notNull().unique(),
+  organizationId: uuid("organization_id").references(() => organizations.id),
   phone: varchar("phone", { length: 32 }),
   passwordHash: text("password_hash").notNull(),
   role: userRole("role").notNull().default("user"),
@@ -76,6 +85,7 @@ export const users = pgTable("users", {
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });
+export const authSessions = pgTable("auth_sessions", { id: uuid("id").primaryKey(), userId: uuid("user_id").references(()=>users.id,{onDelete:"cascade"}).notNull(), lastActivityAt: timestamp("last_activity_at",{withTimezone:true}).defaultNow().notNull(), expiresAt: timestamp("expires_at",{withTimezone:true}).notNull(), revokedAt: timestamp("revoked_at",{withTimezone:true}), createdAt: timestamp("created_at",{withTimezone:true}).defaultNow().notNull() },t=>[index("auth_sessions_user_activity_idx").on(t.userId,t.lastActivityAt)]);
 
 export const passwordResetTokens = pgTable("password_reset_tokens", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -102,6 +112,8 @@ export const quotas = pgTable("quotas", {
   reservationOrigin: varchar("reservation_origin", { length: 20 }),
   reservedAt: timestamp("reserved_at", { withTimezone: true }),
   featured: boolean("featured").notNull().default(false),
+  bidCollateral: boolean("bid_collateral").notNull().default(false),
+  bidFgts: boolean("bid_fgts").notNull().default(false),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });
@@ -159,6 +171,85 @@ export const negotiations = pgTable("negotiations", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 }, table => [index("negotiations_owner_idx").on(table.ownerId), index("negotiations_status_idx").on(table.status)]);
 
+export const crmPipelines = pgTable("crm_pipelines", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  organizationId: uuid("organization_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
+  name: varchar("name", { length: 120 }).notNull(),
+  description: text("description"),
+  color: varchar("color", { length: 20 }).notNull().default("#2563eb"),
+  position: integer("position").notNull().default(0),
+  isDefault: boolean("is_default").notNull().default(false),
+  active: boolean("active").notNull().default(true),
+  createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, table => [index("crm_pipelines_org_idx").on(table.organizationId, table.active), uniqueIndex("crm_pipeline_name_org_uidx").on(table.organizationId, table.name)]);
+
+export const crmPipelineStages = pgTable("crm_pipeline_stages", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  pipelineId: uuid("pipeline_id").references(() => crmPipelines.id, { onDelete: "cascade" }).notNull(),
+  name: varchar("name", { length: 100 }).notNull(),
+  color: varchar("color", { length: 20 }).notNull().default("#64748b"),
+  position: integer("position").notNull().default(0),
+  resultType: varchar("result_type", { length: 20 }).$type<"open" | "won" | "lost">().notNull().default("open"),
+  systemKey: varchar("system_key", { length: 30 }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, table => [index("crm_pipeline_stages_pipeline_idx").on(table.pipelineId, table.position), uniqueIndex("crm_pipeline_stage_system_uidx").on(table.pipelineId, table.systemKey).where(sql`${table.systemKey} is not null`)]);
+
+export const crmDeals = pgTable("crm_deals", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  ownerId: uuid("owner_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  organizationId: uuid("organization_id").references(() => organizations.id),
+  pipelineId: uuid("pipeline_id").references(() => crmPipelines.id),
+  stageId: uuid("stage_id").references(() => crmPipelineStages.id),
+  name: varchar("name", { length: 180 }).notNull(),
+  phone: varchar("phone", { length: 32 }),
+  email: varchar("email", { length: 320 }),
+  instagram: varchar("instagram", { length: 100 }),
+  creditAmount: numeric("credit_amount", { precision: 14, scale: 2 }),
+  category: varchar("category", { length: 80 }),
+  administrator: varchar("administrator", { length: 160 }),
+  priority: varchar("priority", { length: 12 }).$type<"low" | "medium" | "high">().notNull().default("medium"),
+  expectedCloseAt: timestamp("expected_close_at", { withTimezone: true }),
+  notes: text("notes"),
+  lossReason: text("loss_reason"),
+  result: varchar("result", { length: 20 }).$type<"open" | "won" | "lost">().notNull().default("open"),
+  stage: varchar("stage", { length: 30 }).$type<"new" | "reservation" | "lost">().notNull().default("new"),
+  source: varchar("source", { length: 20 }).$type<"manual" | "reservation">().notNull().default("manual"),
+  negotiationId: uuid("negotiation_id").references(() => negotiations.id, { onDelete: "set null" }),
+  version: integer("version").notNull().default(0),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, table => [index("crm_deals_owner_stage_idx").on(table.ownerId, table.stage), uniqueIndex("crm_deals_negotiation_uidx").on(table.negotiationId).where(sql`${table.negotiationId} is not null`)]);
+
+export const crmActivities = pgTable("crm_activities", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  organizationId: uuid("organization_id").references(() => organizations.id).notNull(),
+  dealId: uuid("deal_id").references(() => crmDeals.id, { onDelete: "cascade" }).notNull(),
+  ownerId: uuid("owner_id").references(() => users.id).notNull(),
+  type: varchar("type", { length: 30 }).notNull(),
+  title: varchar("title", { length: 180 }).notNull(),
+  dueAt: timestamp("due_at", { withTimezone: true }).notNull(),
+  status: varchar("status", { length: 20 }).$type<"pending" | "done" | "cancelled">().notNull().default("pending"),
+  notes: text("notes"),
+  completedAt: timestamp("completed_at", { withTimezone: true }),
+  createdBy: uuid("created_by").references(() => users.id).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, table => [index("crm_activities_org_due_idx").on(table.organizationId, table.status, table.dueAt), index("crm_activities_deal_idx").on(table.dealId, table.dueAt)]);
+
+export const crmDealHistory = pgTable("crm_deal_history", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  dealId: uuid("deal_id").references(() => crmDeals.id, { onDelete: "cascade" }).notNull(),
+  actorId: uuid("actor_id").references(() => users.id, { onDelete: "set null" }),
+  action: varchar("action", { length: 60 }).notNull(),
+  previousStage: varchar("previous_stage", { length: 80 }),
+  nextStage: varchar("next_stage", { length: 80 }),
+  details: jsonb("details").$type<Record<string, unknown>>().notNull().default({}),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, table => [index("crm_deal_history_deal_idx").on(table.dealId, table.createdAt)]);
+
 export const negotiationPayments = pgTable("negotiation_payments", {
   id: uuid("id").primaryKey(),
   negotiationId: uuid("negotiation_id").references(() => negotiations.id, { onDelete: "cascade" }).notNull(),
@@ -205,9 +296,65 @@ export const notifications = pgTable("notifications", {
   title: varchar("title", { length: 180 }).notNull(),
   message: text("message").notNull(),
   link: text("link"),
+  dedupeKey: varchar("dedupe_key", { length: 180 }),
+  readAt: timestamp("read_at", { withTimezone: true }),
   expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 }, table => [index("notifications_recipient_expiry_idx").on(table.recipientId, table.expiresAt), index("notifications_role_expiry_idx").on(table.audienceRole, table.expiresAt)]);
+
+export const communications = pgTable("communications", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  organizationId: uuid("organization_id").references(() => organizations.id, { onDelete: "cascade" }),
+  imageUrl: text("image_url"),
+  body: text("body").notNull(),
+  linkUrl: text("link_url"),
+  active: boolean("active").notNull().default(true),
+  createdBy: uuid("created_by").references(() => users.id).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, table => [index("communications_org_active_idx").on(table.organizationId, table.active, table.createdAt)]);
+
+export const communicationReads = pgTable("communication_reads", {
+  communicationId: uuid("communication_id").references(() => communications.id, { onDelete: "cascade" }).notNull(),
+  userId: uuid("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  readAt: timestamp("read_at", { withTimezone: true }).defaultNow().notNull(),
+}, table => [uniqueIndex("communication_reads_uidx").on(table.communicationId, table.userId)]);
+
+export const userProfiles = pgTable("user_profiles", {
+  userId: uuid("user_id").primaryKey().references(() => users.id, { onDelete: "cascade" }),
+  firstName: varchar("first_name", { length: 100 }), lastName: varchar("last_name", { length: 100 }),
+  gender: varchar("gender", { length: 30 }), phone: varchar("phone", { length: 32 }),
+  email: varchar("email", { length: 320 }), taxDocument: varchar("tax_document", { length: 30 }),
+  companyName: varchar("company_name", { length: 180 }), address: text("address"),
+  interestedAdministrators: jsonb("interested_administrators").$type<string[]>().notNull().default([]),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const stockAlertPreferences = pgTable("stock_alert_preferences", {
+  userId: uuid("user_id").primaryKey().references(() => users.id, { onDelete: "cascade" }),
+  administrator: varchar("administrator", { length: 160 }), category: varchar("category", { length: 80 }),
+  maxEntryPercent: numeric("max_entry_percent", { precision: 5, scale: 2 }), averageTerm: integer("average_term"),
+  maxInstallment: numeric("max_installment", { precision: 14, scale: 2 }),
+  desiredCredit: numeric("desired_credit", { precision: 14, scale: 2 }),
+  minOutstandingBalance: numeric("min_outstanding_balance", { precision: 14, scale: 2 }),
+  maxOutstandingBalance: numeric("max_outstanding_balance", { precision: 14, scale: 2 }),
+  outstandingBalanceRelation: varchar("outstanding_balance_relation", { length: 20 }).$type<"below_credit" | "above_credit">(),
+  active: boolean("active").notNull().default(true), updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+export const stockSearchWishes = pgTable("stock_search_wishes", { id:uuid("id").defaultRandom().primaryKey(),userId:uuid("user_id").references(()=>users.id,{onDelete:"cascade"}).notNull(),administrator:varchar("administrator",{length:160}).notNull(),category:varchar("category",{length:80}).notNull(),targetCredit:numeric("target_credit",{precision:14,scale:2}),maxEntry:numeric("max_entry",{precision:14,scale:2}),maxInstallment:numeric("max_installment",{precision:14,scale:2}),minTerm:integer("min_term"),maxTerm:integer("max_term"),maxBalance:numeric("max_balance",{precision:14,scale:2}),active:boolean("active").default(true).notNull(),createdAt:timestamp("created_at",{withTimezone:true}).defaultNow().notNull() },t=>[index("stock_search_wishes_user_idx").on(t.userId)]);
+
+export const partnerApiKeys = pgTable("partner_api_keys", {
+  id: uuid("id").defaultRandom().primaryKey(), userId: uuid("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  tokenHash: varchar("token_hash", { length: 64 }).notNull().unique(), prefix: varchar("prefix", { length: 24 }).notNull(),
+  commissionRate: integer("commission_rate").notNull().default(0), lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
+  revokedAt: timestamp("revoked_at", { withTimezone: true }), createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, table => [index("partner_api_keys_user_idx").on(table.userId)]);
+
+export const partnerApiLogs = pgTable("partner_api_logs", {
+  id: uuid("id").defaultRandom().primaryKey(), apiKeyId: uuid("api_key_id").references(() => partnerApiKeys.id, { onDelete: "cascade" }).notNull(),
+  path: varchar("path", { length: 200 }).notNull(), statusCode: integer("status_code").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, table => [index("partner_api_logs_key_created_idx").on(table.apiKeyId, table.createdAt)]);
 
 export const preAnalysisDocuments = pgTable("pre_analysis_documents", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -231,5 +378,6 @@ export const appSettings = pgTable("app_settings", {
   allowedFileTypes: jsonb("allowed_file_types").$type<string[]>().notNull().default(["application/pdf", "image/jpeg", "image/png"]),
   incomeDocuments: jsonb("income_documents").$type<Record<string, string[]>>().notNull(),
   incomeTypes: jsonb("income_types").$type<Record<string,"PF"|"PJ">>(),
+  fbApiOnline: boolean("fb_api_online").notNull().default(true),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });
