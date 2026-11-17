@@ -10,3 +10,6 @@ coverage/
 .vscode/
 
 .local/
+.local-storage/
+.hotfix-fb/
+artifacts/

@@ -15,6 +15,7 @@ export function saImportValues(data: QuotaInput) {
     installmentAmount: moneyNumber(installment).toFixed(2),
     outstandingBalance: moneyNumber(installment * BigInt(data.installmentCount)).toFixed(2),
     reservationOrigin: data.status === "reserved" ? "manual" : null,
+    reservedAt: data.status === "reserved" ? new Date() : null,
   };
 }
 

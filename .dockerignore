@@ -1,0 +1,10 @@
+node_modules
+.git
+.hotfix-fb
+.local
+.local-storage
+.env
+.env.*
+artifacts
+coverage
+*.log

@@ -1,0 +1,7 @@
+import { X } from "lucide-react";
+import { useState } from "react";
+import { dismissBackdrop } from "../../lib/dismissBackdrop";
+export default function PipelineCreateModal({onClose,onSave}:{onClose:()=>void;onSave:(value:{name:string;description:string})=>Promise<void>}){
+ const [name,setName]=useState(""),[description,setDescription]=useState(""),[saving,setSaving]=useState(false);
+ return <div className="nested-modal-backdrop" {...dismissBackdrop(onClose,saving)}><form className="crm-activity-modal crm-pipeline-create-modal" onSubmit={async e=>{e.preventDefault();setSaving(true);try{await onSave({name,description});onClose()}finally{setSaving(false)}}}><div className="modal-heading"><div><span className="eyebrow">NOVO PIPELINE</span><h2>Criar fluxo comercial</h2></div><button type="button" className="icon-button" onClick={onClose}><X size={18}/></button></div><label>Nome do pipeline<input required minLength={2} maxLength={100} autoFocus value={name} onChange={e=>setName(e.target.value)} placeholder="Ex.: Novos parceiros"/></label><label>Descrição <small>(opcional)</small><textarea rows={3} maxLength={500} value={description} onChange={e=>setDescription(e.target.value)} placeholder="Objetivo deste fluxo"/></label><div className="form-actions"><button type="button" className="secondary-button" onClick={onClose}>Cancelar</button><button className="primary-button" disabled={saving}>{saving?"Criando…":"Criar pipeline"}</button></div></form></div>
+}

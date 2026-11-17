@@ -4,7 +4,7 @@ import { PgDialect } from "drizzle-orm/pg-core";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { DEFAULT_USER_PASSWORD } from "../../shared/contracts";
 import { verifyPassword } from "../auth/password";
-const state = vi.hoisted(() => ({ user: { id: "123e4567-e89b-42d3-a456-426614174001", role: "admin" }, changes: null as any, where: null as any, found: true, tokensRemoved: false, transactions: 0 }));
+const state = vi.hoisted(() => ({ user: { id: "123e4567-e89b-42d3-a456-426614174001", role: "admin", organizationId: "00000000-0000-4000-8000-000000000001" }, changes: null as any, where: null as any, found: true, tokensRemoved: false, transactions: 0 }));
 vi.mock("../auth/current-user", () => ({ getCurrentUser: async () => state.user }));
 vi.mock("../db/client", () => {
   const db: any = {
@@ -31,6 +31,7 @@ it("creates a user with the fixed password hashed even if a different password i
   expect(await verifyPassword(DEFAULT_USER_PASSWORD, state.changes.passwordHash)).toBe(true);
   expect(await verifyPassword("attacker-chosen", state.changes.passwordHash)).toBe(false);
   expect(state.changes.mustChangePassword).toBe(true);
+  expect(state.changes.organizationId).toBe(state.user.organizationId);
   expect((await response.json()).user).not.toHaveProperty("passwordHash");
 });
 it("resets with a hash, revokes sessions and removes old recovery tokens in one transaction", async () => {

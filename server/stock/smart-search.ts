@@ -6,23 +6,26 @@ import { moneyCents } from "../../shared/money";
 export { moneyCents } from "../../shared/money";
 const abs = (value: bigint) => value < 0n ? -value : value;
 type Choice = { index: number; previous: Choice | null };
-type State = { index: number; credit: bigint; cost: bigint; count: number; choice: Choice | null };
+type State = { index: number; credit: bigint; cost: bigint; entry: bigint; installment: bigint; balance: bigint; count: number; choice: Choice | null };
 const ratioScale = 10_000_000_000n; // Ratios within 1e-10 are treated as a tie.
 
 export async function findSmartCombination<T extends CalculationQuota>(
   stock: T[], input: SmartSearchInput,
-  limits: { maxNodes?: number; maxMs?: number } = {},
+  limits: { maxNodes?: number; maxMs?: number; maxEntry?: number; maxInstallment?: number; maxBalance?: number } = {},
 ) {
   const target = moneyCents(input.targetCredit);
   const minimum = (target * 98n + 99n) / 100n;
   const maximum = target * 102n / 100n;
   const key = input.priority === "entry" ? "entryAmount" : input.priority === "installment" ? "installmentAmount" : "outstandingBalance";
   const seen = new Set<string>();
+  const maxEntry = limits.maxEntry == null ? null : moneyCents(limits.maxEntry);
+  const maxInstallment = limits.maxInstallment == null ? null : moneyCents(limits.maxInstallment);
+  const maxBalance = limits.maxBalance == null ? null : moneyCents(limits.maxBalance);
   const candidates = stock.filter(item => {
     if (seen.has(item.id) || item.category !== input.category || (input.administrator && item.administrator !== input.administrator)) return false;
     seen.add(item.id);
     return true;
-  }).map(item => ({ item, credit: moneyCents(item.creditAmount), cost: moneyCents(item[key]) }))
+  }).map(item => ({ item, credit: moneyCents(item.creditAmount), cost: moneyCents(item[key]), entry: moneyCents(item.entryAmount), installment: moneyCents(item.installmentAmount), balance: moneyCents(item.outstandingBalance) }))
     .filter(item => item.credit > 0n && item.credit <= maximum)
     .sort((a, b) => {
       const cross = a.cost * b.credit - b.cost * a.credit;
@@ -48,15 +51,16 @@ export async function findSmartCombination<T extends CalculationQuota>(
   const greedyByAdministrator = new Map<string, State>();
   for (let index = 0; index < candidates.length; index++) {
     const candidate = candidates[index];
-    let greedy = greedyByAdministrator.get(candidate.item.administrator) ?? { index: 0, credit: 0n, cost: 0n, count: 0, choice: null };
-    consider({ index, credit: candidate.credit, cost: candidate.cost, count: 1, choice: { index, previous: null } });
-    if (greedy.credit + candidate.credit <= maximum) {
-      greedy = { index, credit: greedy.credit + candidate.credit, cost: greedy.cost + candidate.cost, count: greedy.count + 1, choice: { index, previous: greedy.choice } };
+    let greedy = greedyByAdministrator.get(candidate.item.administrator) ?? { index: 0, credit: 0n, cost: 0n, entry: 0n, installment: 0n, balance: 0n, count: 0, choice: null };
+    const single = { index, credit: candidate.credit, cost: candidate.cost, entry: candidate.entry, installment: candidate.installment, balance: candidate.balance, count: 1, choice: { index, previous: null } };
+    if ((maxEntry == null || single.entry <= maxEntry) && (maxInstallment == null || single.installment <= maxInstallment) && (maxBalance == null || single.balance <= maxBalance)) consider(single);
+    if (greedy.credit + candidate.credit <= maximum && (maxEntry == null || greedy.entry + candidate.entry <= maxEntry) && (maxInstallment == null || greedy.installment + candidate.installment <= maxInstallment) && (maxBalance == null || greedy.balance + candidate.balance <= maxBalance)) {
+      greedy = { index, credit: greedy.credit + candidate.credit, cost: greedy.cost + candidate.cost, entry: greedy.entry + candidate.entry, installment: greedy.installment + candidate.installment, balance: greedy.balance + candidate.balance, count: greedy.count + 1, choice: { index, previous: greedy.choice } };
       greedyByAdministrator.set(candidate.item.administrator, greedy);
       consider(greedy);
     }
   }
-  const stack: State[] = [{ index: 0, credit: 0n, cost: 0n, count: 0, choice: null }];
+  const stack: State[] = [{ index: 0, credit: 0n, cost: 0n, entry: 0n, installment: 0n, balance: 0n, count: 0, choice: null }];
   const deadline = performance.now() + (limits.maxMs ?? 1500);
   const maxNodes = limits.maxNodes ?? 250_000;
   let visited = 0;
@@ -86,8 +90,9 @@ export async function findSmartCombination<T extends CalculationQuota>(
       if (lowerBound > bestRatio + numericSlack) continue;
     }
     stack.push({ ...state, index: state.index + 1 });
-    if (state.credit + candidate.credit <= maximum) stack.push({
+    if (state.credit + candidate.credit <= maximum && (maxEntry == null || state.entry + candidate.entry <= maxEntry) && (maxInstallment == null || state.installment + candidate.installment <= maxInstallment) && (maxBalance == null || state.balance + candidate.balance <= maxBalance)) stack.push({
       index: state.index + 1, credit: state.credit + candidate.credit, cost: state.cost + candidate.cost,
+      entry: state.entry + candidate.entry, installment: state.installment + candidate.installment, balance: state.balance + candidate.balance,
       count: state.count + 1, choice: { index: state.index, previous: state.choice },
     });
   }

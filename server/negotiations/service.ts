@@ -4,6 +4,7 @@ import { calculateQuote } from "../../shared/quote";
 import { getDatabase } from "../db/client";
 import { negotiations, notifications, quotas, reservationRequests, savedQuotes } from "../db/schema";
 import { notificationExpiry } from "../notifications/routes";
+import { syncApprovedNegotiation } from "../crm/service";
 
 export class NegotiationError extends Error {
   constructor(public status: number, message: string) { super(message); }
@@ -42,6 +43,7 @@ export async function reviewReservation(id: string, status: "approved" | "reject
     if (reservation.status !== "pending") {
       if (reservation.status !== status) throw new NegotiationError(409, "Esta reserva já foi revisada");
       const [negotiation] = await tx.select().from(negotiations).where(eq(negotiations.reservationId, id));
+      if (status === "approved" && negotiation) await syncApprovedNegotiation(tx, negotiation, reviewerId);
       return { item: reservation, negotiation: negotiation ? { id: negotiation.id, code: negotiation.code } : null };
     }
     if (quote.expiresAt <= new Date()) throw new NegotiationError(409, "A cotação expirou. Gere uma nova cotação");
@@ -58,10 +60,11 @@ export async function reviewReservation(id: string, status: "approved" | "reject
         return current.administrator !== snapshot.administrator || current.category !== snapshot.category || priceFields.some(field => Number(current[field]) !== Number(snapshot[field]));
       });
       if (changed.length) throw new NegotiationError(409, `Valores atualizados nas cotas ${changed.map(q => q.code).join(", ")}. Gere uma nova cotacao antes de reservar.`);
-      await tx.update(quotas).set({ status: "reserved", reservationOrigin: "negotiation", updatedAt: new Date() }).where(and(inArray(quotas.id, ids), eq(quotas.status, "available")));
+      await tx.update(quotas).set({ status: "reserved", reservationOrigin: "negotiation", reservedAt: new Date(), updatedAt: new Date() }).where(and(inArray(quotas.id, ids), eq(quotas.status, "available")));
     }
     const [item] = await tx.update(reservationRequests).set({ status, reviewedBy: reviewerId, reviewedAt: new Date() }).where(eq(reservationRequests.id, id)).returning();
     const negotiation = status === "approved" ? await createNegotiation(tx, item, quote) : null;
+    if (negotiation) await syncApprovedNegotiation(tx, negotiation, reviewerId);
     const codes = quote.selectedQuotas.map(quota => quota.code).join(", ");
     await tx.insert(notifications).values({ recipientId: reservation.requesterId, title: status === "approved" ? "Reserva aprovada" : "Reserva reprovada", message: status === "approved" ? `Sua solicitação de reserva das cotas: ${codes}, foi aprovada!` : `Sua reserva das cotas: ${codes}, foi reprovada.`, link: status === "approved" && negotiation ? `/negociacoes?id=${negotiation.id}` : `/cotacoes?id=${quote.id}`, expiresAt: notificationExpiry() });
     if (status === "approved") {
@@ -85,7 +88,10 @@ export async function backfillNegotiations() {
     const rows = await tx.select({ reservation: reservationRequests, quote: savedQuotes }).from(reservationRequests)
       .innerJoin(savedQuotes, eq(savedQuotes.id, reservationRequests.quoteId))
       .where(eq(reservationRequests.status, "approved")).orderBy(asc(reservationRequests.reviewedAt));
-    for (const row of rows) await createNegotiation(tx, row.reservation, row.quote);
+    for (const row of rows) {
+      const negotiation = await createNegotiation(tx, row.reservation, row.quote);
+      if (negotiation) await syncApprovedNegotiation(tx, negotiation, row.reservation.reviewedBy ?? row.reservation.requesterId);
+    }
     return rows.length;
   });
 }
@@ -96,7 +102,7 @@ export async function releaseNegotiationStock(tx: Transaction, item: typeof nego
   for (const quota of item.selectedQuotas) {
     // Recover snapshots lost by the old destructive import, without overwriting a newer stock identity.
     await tx.insert(quotas).values({ id: quota.id, code: quota.code, category: quota.category, administrator: quota.administrator, installmentCount: quota.installmentCount, creditAmount: String(quota.creditAmount), entryAmount: String(quota.entryAmount), installmentAmount: String(quota.installmentAmount), outstandingBalance: String(quota.outstandingBalance), status: "available" }).onConflictDoNothing();
-    await tx.update(quotas).set({ status: "available", reservationOrigin: null, updatedAt: new Date() }).where(and(or(eq(quotas.id, quota.id), eq(quotas.code, quota.code)), sql`not ${committedQuota(item.id)}`));
+    await tx.update(quotas).set({ status: "available", reservationOrigin: null, reservedAt: null, updatedAt: new Date() }).where(and(or(eq(quotas.id, quota.id), eq(quotas.code, quota.code)), sql`not ${committedQuota(item.id)}`));
   }
   // Prevent startup backfill from resurrecting a deleted negotiation.
   await tx.update(reservationRequests).set({ status: "cancelled", reviewedAt: new Date() }).where(eq(reservationRequests.id, item.reservationId));

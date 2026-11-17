@@ -1,0 +1,30 @@
+/* O quadro cresce sempre na horizontal: novas etapas entram à direita. */
+.crm-suite .crm-board {
+  display: flex;
+  align-items: flex-start;
+  flex-wrap: nowrap;
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: visible;
+  padding-bottom: 20px;
+  scroll-snap-type: x proximity;
+  scrollbar-gutter: stable;
+}
+
+.crm-suite .crm-column {
+  width: 320px;
+  min-width: 320px;
+  max-width: 320px;
+  flex: 0 0 320px;
+  scroll-snap-align: start;
+}
+
+@media (max-width: 760px) {
+  .crm-suite .crm-column {
+    width: min(86vw, 320px);
+    min-width: min(86vw, 320px);
+    max-width: min(86vw, 320px);
+    flex-basis: min(86vw, 320px);
+  }
+}

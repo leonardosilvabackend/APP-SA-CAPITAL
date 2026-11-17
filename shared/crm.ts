@@ -1,0 +1,13 @@
+import { z } from "zod";
+export type CrmStage = string;
+const optionalText = (max: number) => z.string().trim().max(max).optional().nullable().transform(value => value || null);
+const color = z.string().regex(/^#[0-9a-f]{6}$/i, "Cor inválida");
+export const crmPipelineInputSchema = z.object({ name: z.string().trim().min(2).max(120), description: optionalText(1000), color, isDefault: z.boolean().default(false), stages: z.array(z.object({ name: z.string().trim().min(1).max(100), color, resultType: z.enum(["open","won","lost"]).default("open") })).min(1).max(30).optional() }).strict();
+export const crmStageInputSchema = z.object({ name: z.string().trim().min(1).max(100), color, resultType: z.enum(["open","won","lost"]).default("open") }).strict();
+export const crmStageOrderSchema = z.object({ stageIds: z.array(z.string().uuid()).min(1).max(30) }).strict();
+export const crmDealInputSchema = z.object({ name: z.string().trim().min(2, "Informe o nome").max(180), phone: optionalText(32), email: z.string().email().or(z.literal("")).optional().nullable().transform(v=>v||null), instagram: optionalText(100), creditAmount: z.number().nonnegative().max(999999999999.99).optional().nullable(), category: optionalText(80), administrator: optionalText(160), pipelineId: z.string().uuid(), stageId: z.string().uuid(), ownerId: z.string().uuid().optional(), priority: z.enum(["low","medium","high"]).default("medium"), expectedCloseAt: z.string().datetime().optional().nullable(), notes: optionalText(5000), lossReason: optionalText(1000) }).strict();
+export const crmMoveSchema = z.object({ stageId: z.string().uuid(), version: z.number().int().nonnegative(), lossReason: optionalText(1000) }).strict();
+export const crmActivityInputSchema = z.object({ dealId:z.string().uuid(), ownerId:z.string().uuid().optional(), type:z.enum(["call","whatsapp","follow_up","meeting","proposal","other"]), title:z.string().trim().min(2).max(180), dueAt:z.string().datetime(), notes:optionalText(2000) }).strict();
+export const isCrmAdministrator = (role: string) => role === "admin" || role === "administrative";
+export function crmMoveError(role: string, currentSystemKey: string | null, targetSystemKey: string | null, activeReservation: boolean) { if (!isCrmAdministrator(role) && (currentSystemKey === "reservation" || targetSystemKey === "reservation")) return "Os negócios entram nesta etapa automaticamente após a aprovação da reserva."; if (!isCrmAdministrator(role) && targetSystemKey === "lost" && activeReservation) return "Existe uma reserva ativa vinculada a este negócio."; return null; }
+export const crmDeleteError = (activeReservation: boolean) => activeReservation ? "Este negócio está vinculado a uma reserva ativa e não pode ser excluído." : null;

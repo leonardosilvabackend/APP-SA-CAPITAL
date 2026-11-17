@@ -10,8 +10,8 @@ it("uses total balance divided by the first cascade amount, preserving fractiona
 it.each([[40, "40"], [40.16, "40,16"], [40.1, "40,1"], [40.004, "40"], [null, "Não disponível"]])("formats average term %s without unnecessary decimals", (value, expected) => {
   expect(promoAverageTerm(value as number | null)).toBe(expected);
 });
-it("offers truck artwork only for vehicle quotes and two house designs for property",()=>{
+it("offers three artwork options for both vehicle and property quotes",()=>{
  const quote={quotas,summary:calculateQuote(quotas,0),commercialText:""};
- expect(promoDesigns(quote).map(d=>d.id)).toEqual(["modern","highlight"]);
- expect(promoDesigns({...quote,quotas:quotas.map(q=>({...q,category:"Veículo"}))}).map(d=>d.id)).toEqual(["modern","highlight","truck"]);
+ expect(promoDesigns(quote).map(d=>d.id)).toEqual(["modern","highlight","property_alt"]);
+ expect(promoDesigns({...quote,quotas:quotas.map(q=>({...q,category:"Veículo"}))}).map(d=>d.id)).toEqual(["modern","truck","tractor"]);
 });

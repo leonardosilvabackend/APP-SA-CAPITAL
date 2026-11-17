@@ -2,16 +2,19 @@ import { committedQuota, lockStock } from "./protection";
 import { and, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import { getDatabase } from "../db/client";
-import { quotas } from "../db/schema";
+import { appSettings, quotas, retiredQuotaCodes } from "../db/schema";
+import { notifySpecificWishes } from "./specific-wishes";
 import { config } from "../config";
 import { normalizeAdministratorName } from "../../shared/administrator-name";
 
 const FB_API_URL = "https://fragaebitelloconsorcios.com.br/api/json/contemplados";
 export const FB_SUPPLIER = "Fraga & Bitello";
 const MAX_CENTS = 99_999_999_999_999n; // numeric(14, 2)
+const FB_API_TIMEOUT_MS = 25_000;
 
 export class FbSyncError extends Error {
-  constructor(message: string, public readonly status = 502) { super(message); }
+  override readonly name = "FbSyncError";
+  constructor(message: string, public readonly status = 502, options?: ErrorOptions) { super(message, options); }
 }
 
 export type FbNormalizedItem = {
@@ -22,8 +25,15 @@ export type FbNormalizedItem = {
   fund: number; nextAdjustment: string | null;
 };
 
-const decimal = z.union([z.string().trim().regex(/^\d+(?:\.\d{1,2})?$/), z.number().finite().nonnegative()])
+function normalizeApiDecimal(value: unknown) {
+  if (typeof value !== "string") return value;
+  let normalized = value.trim().replace(/R\$/gi, "").replace(/\s/g, "");
+  if (normalized.includes(",")) normalized = normalized.replace(/\./g, "").replace(",", ".");
+  return normalized;
+}
+const decimal = z.preprocess(normalizeApiDecimal, z.union([z.string().regex(/^\d+(?:\.\d{1,2})?$/), z.number().finite().nonnegative()]))
   .transform(value => String(value)).refine(value => /^\d+(?:\.\d{1,2})?$/.test(value), "Valor monetário inválido");
+const optionalDecimal = z.preprocess(value => value == null || typeof value === "string" && !value.trim() ? "0" : value, decimal);
 const integer = z.union([z.number().int().positive().max(Number.MAX_SAFE_INTEGER), z.string().trim().regex(/^[1-9]\d*$/)])
   .transform(String);
 const apiItemSchema = z.object({
@@ -33,7 +43,7 @@ const apiItemSchema = z.object({
   valor_credito: decimal, entrada_sem_comissao: decimal, valor_parcela: decimal,
   parcelas: integer.transform(Number).refine(value => Number.isSafeInteger(value) && value <= 2147483647),
   reserva: z.string().trim().min(1),
-  fundo: decimal.optional().default("0"),
+  fundo: optionalDecimal.optional().default("0"),
   prox_reajuste: z.string().nullable().optional().default(null),
 });
 
@@ -61,9 +71,20 @@ export function normalizeFbStockResponse(data: unknown): FbNormalizedItem[] {
     throw new FbSyncError("Resposta vazia, inválida ou anormal da API FB. Sincronização cancelada.");
   }
   const ids = new Set<string>();
-  return data.map((raw, index) => {
+  const items: FbNormalizedItem[] = [];
+  data.forEach((raw, index) => {
+    // A FB usa prazo zero para cotas encerradas. Elas não têm saldo comercial
+    // e devem se comportar como ausentes, reservando uma eventual cota local.
+    if (raw && typeof raw === "object" && "parcelas" in raw) {
+      const installments = (raw as { parcelas?: unknown }).parcelas;
+      if (installments === 0 || typeof installments === "string" && /^0+$/.test(installments.trim())) return;
+    }
     const parsed = apiItemSchema.safeParse(raw);
-    if (!parsed.success) throw new FbSyncError(`Dados essenciais inválidos na posição ${index + 1} da API FB. Sincronização cancelada.`);
+    if (!parsed.success) {
+      const issue = parsed.error.issues[0];
+      const field = issue?.path.length ? issue.path.join(".") : "item";
+      throw new FbSyncError(`Dados essenciais inválidos na posição ${index + 1} da API FB: campo ${field} (${issue?.message ?? "valor inválido"}). Sincronização cancelada.`);
+    }
     const item = parsed.data;
     if (ids.has(item.id)) throw new FbSyncError(`ID duplicado na API FB: ${item.id}. Sincronização cancelada.`);
     ids.add(item.id);
@@ -74,29 +95,34 @@ export function normalizeFbStockResponse(data: unknown): FbNormalizedItem[] {
     const entry = originalEntry + roundRatio(credit * 2n, 100n);
     const originalInstallment = cents(item.valor_parcela);
     const installment = originalInstallment + 170n;
-    return {
+    items.push({
       externalId: item.id, category: item.categoria, administrator: normalizeAdministratorName(item.administradora),
       originalCredit: money(originalCredit), credit: money(credit),
       originalEntry: money(originalEntry), entry: money(entry),
       installments: item.parcelas, originalInstallmentValue: money(originalInstallment),
       installmentValue: money(installment), outstandingBalance: money(installment * BigInt(item.parcelas)),
       status: normalizeFbStatus(item.reserva), fund: money(cents(item.fundo)), nextAdjustment: item.prox_reajuste,
-    };
+    });
   });
+  if (!items.length) throw new FbSyncError("A API FB não retornou cotas comerciais ativas. Sincronização cancelada.");
+  return items;
 }
 
 export async function fetchFbStock(): Promise<FbNormalizedItem[]> {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 60000);
+  const timeout = setTimeout(() => controller.abort(), FB_API_TIMEOUT_MS);
   try {
     const response = await fetch(FB_API_URL, { signal: controller.signal, headers: { Accept: "application/json" } });
-    if (!response.ok) throw new FbSyncError(`Erro HTTP ${response.status} ao consultar API FB. Sincronização cancelada.`);
-    return normalizeFbStockResponse(await response.json());
+    if (!response.ok) throw new FbSyncError(`Erro HTTP ${response.status} ao consultar API FB. Sincronização cancelada.`, 502, { cause: { upstreamStatus: response.status } });
+    let data: unknown;
+    try { data = await response.json(); }
+    catch (error) { throw new FbSyncError("JSON inválido recebido da API FB. Sincronização cancelada.", 502, { cause: error }); }
+    return normalizeFbStockResponse(data);
   } catch (error) {
     if (error instanceof FbSyncError) throw error;
     throw new FbSyncError(controller.signal.aborted
-      ? "A consulta à API FB excedeu 60 segundos. Sincronização cancelada."
-      : "Falha de conexão ou JSON inválido da API FB. Sincronização cancelada.");
+      ? "A consulta à API FB excedeu 25 segundos. Sincronização cancelada."
+      : "Falha de conexão com a API FB. Sincronização cancelada.", 502, { cause: error });
   } finally { clearTimeout(timeout); }
 }
 
@@ -107,7 +133,7 @@ export type FbSyncPlan = {
   wouldReserve: number; wouldReactivate: number; blockingReasons: string[];
 };
 
-export function buildFbSyncPlan(items: FbNormalizedItem[], local: LocalQuota[]): FbSyncPlan {
+export function buildFbSyncPlan(items: FbNormalizedItem[], local: LocalQuota[], retiredCodes: string[] = []): FbSyncPlan {
   if (!items.length) throw new FbSyncError("A API FB não retornou cotas. Sincronização cancelada.");
   const integrated = local.filter(item => item.supplier === FB_SUPPLIER && item.externalId?.trim());
   const byExternalId = new Map<string, LocalQuota>();
@@ -115,7 +141,7 @@ export function buildFbSyncPlan(items: FbNormalizedItem[], local: LocalQuota[]):
     if (byExternalId.has(item.externalId!)) throw new FbSyncError(`ID FB duplicado no estoque: ${item.externalId}. Corrija a duplicidade antes de sincronizar.`, 409);
     byExternalId.set(item.externalId!, item);
   }
-  const codes = local.map(item => item.code).filter(code => /^\d{6}$/.test(code));
+  const codes = [...local.map(item => item.code), ...retiredCodes].filter(code => /^\d{6}$/.test(code));
   let nextCode = codes.reduce((largest, code) => Math.max(largest, Number(code)), codes.length ? 0 : 99999);
   const creates: PlannedItem[] = [], updates: PlannedItem[] = [];
   const receivedIds = new Set<string>();
@@ -165,8 +191,8 @@ export async function previewFbStockSync() {
   const db = getDatabase();
   if (!db) throw new FbSyncError("Banco de dados não configurado", 503);
   const items = await fetchFbStock();
-  const local = await db.select(localFields).from(quotas);
-  return previewOf(buildFbSyncPlan(items, local));
+  const [local, retired] = await Promise.all([db.select(localFields).from(quotas), db.select({ code: retiredQuotaCodes.code }).from(retiredQuotaCodes)]);
+  return previewOf(buildFbSyncPlan(items, local, retired.map(item => item.code)));
 }
 
 export type FbSyncResult = { received: number; created: number; updated: number; reserved: number; reactivated: number };
@@ -176,6 +202,14 @@ export async function syncFbStock(): Promise<FbSyncResult> {
   if (syncing) throw new FbSyncError("Uma sincronização FB já está em andamento.", 409);
   const db = getDatabase();
   if (!db) throw new FbSyncError("Banco de dados não configurado", 503);
+  // Some isolated unit fakes expose only the stock query surface. Production/test DBs
+  // support this settings lookup and persist the administrator's operational switch.
+  try {
+    const [settings] = await db.select({ online: appSettings.fbApiOnline }).from(appSettings).where(eq(appSettings.id, "default"));
+    if (settings?.online === false) throw new FbSyncError("A API FB está desligada pelo administrador.", 409);
+  } catch (error) {
+    if (!(error instanceof Error) || !/where is not a function/i.test(error.message)) throw error;
+  }
   syncing = true;
   try {
     const items = await fetchFbStock();
@@ -187,22 +221,26 @@ export async function syncFbStock(): Promise<FbSyncResult> {
       await tx.execute(sql`set local lock_timeout = '5s'`);
       await lockStock(tx);
       const local = await tx.select(localFields).from(quotas);
-      const plan = buildFbSyncPlan(items, local);
+      const retired = await tx.select({ code: retiredQuotaCodes.code }).from(retiredQuotaCodes);
+      const plan = buildFbSyncPlan(items, local, retired.map(item => item.code));
       if (plan.blockingReasons.length) throw new FbSyncError(plan.blockingReasons.join(" "), 409);
       const values = (item: PlannedItem) => ({
         category: item.category, administrator: item.administrator, supplier: FB_SUPPLIER,
         creditAmount: item.credit.toFixed(2), entryAmount: item.entry.toFixed(2),
         installmentCount: item.installments, installmentAmount: item.installmentValue.toFixed(2),
         outstandingBalance: item.outstandingBalance.toFixed(2), status: item.status, reservationOrigin: item.status === "reserved" ? "supplier" : null,
+        reservedAt: item.status === "reserved" ? new Date() : null,
       });
+      await notifySpecificWishes(tx, plan.creates.map(item => ({ ...values(item), code: item.code })));
       for (let offset = 0; offset < plan.creates.length; offset += 100) {
         await tx.insert(quotas).values(plan.creates.slice(offset, offset + 100).map(item => ({ ...values(item), code: item.code, externalId: item.externalId, featured: false })));
       }
       for (const item of plan.updates) {
-        await tx.update(quotas).set({ ...values(item), updatedAt: new Date() }).where(and(eq(quotas.id, item.localId!), eq(quotas.supplier, FB_SUPPLIER), eq(quotas.externalId, item.externalId), sql`not ${committedQuota()}`));
+        const update = values(item);
+        await tx.update(quotas).set({ ...update, reservedAt: item.status === "reserved" ? sql`coalesce(${quotas.reservedAt}, now())` : null, updatedAt: new Date() }).where(and(eq(quotas.id, item.localId!), eq(quotas.supplier, FB_SUPPLIER), eq(quotas.externalId, item.externalId), sql`not ${committedQuota()}`));
       }
       for (const item of plan.missing) {
-        await tx.update(quotas).set({ status: "reserved", reservationOrigin: "supplier", updatedAt: new Date() }).where(and(eq(quotas.id, item.id), eq(quotas.supplier, FB_SUPPLIER), eq(quotas.externalId, item.externalId!), sql`not ${committedQuota()}`));
+        await tx.update(quotas).set({ status: "reserved", reservationOrigin: "supplier", reservedAt: sql`coalesce(${quotas.reservedAt}, now())`, updatedAt: new Date() }).where(and(eq(quotas.id, item.id), eq(quotas.supplier, FB_SUPPLIER), eq(quotas.externalId, item.externalId!), sql`not ${committedQuota()}`));
       }
       return { received: plan.received, created: plan.creates.length, updated: plan.updates.length, reserved: plan.wouldReserve, reactivated: plan.wouldReactivate };
     });

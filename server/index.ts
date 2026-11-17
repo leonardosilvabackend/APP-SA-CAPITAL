@@ -1,4 +1,5 @@
 import { observeRequest, operationalMetrics, readinessProbe } from "./observability";
+import { securityHeaders } from "./security-headers";
 import { sql } from "drizzle-orm";
 import { getDatabase } from "./db/client";
 import { processEmailJobs } from "./email-queue";
@@ -24,6 +25,11 @@ import { backfillNegotiations } from "./negotiations/service";
 import { cleanupExpiredNotifications, notificationsRouter } from "./notifications/routes";
 import { auditRouter } from "./audit/routes";
 import { profileRouter } from "./profile/routes";
+import { integrationsRouter } from "./integrations/routes";
+import { partnerApiRouter } from "./partner-api";
+import { crmRouter } from "./crm/routes";
+import { communicationsRouter } from "./communications/routes";
+import { cleanupExpiredStockReservations } from "./stock/reservation-expiry";
 
 assertDatabaseSafety();
 if (config.jwtSecret.length < 32) throw new Error("JWT_SECRET deve possuir ao menos 32 caracteres");
@@ -32,12 +38,14 @@ if (config.emailEnabled && (!config.resendApiKey || !config.resendFromEmail)) th
 console.log(`SA Capital\nAmbiente: ${config.appEnv.toUpperCase()}\nBanco: ${config.databaseEnv.toUpperCase()}\nE-mails: ${config.emailEnabled ? "HABILITADOS" : "DESABILITADOS"}\nJobs automáticos: ${config.scheduledJobsEnabled ? "HABILITADOS" : "DESABILITADOS"}\nSincronização FB: ${config.fbSyncEnabled ? "HABILITADA" : "DESABILITADA"}`);
 const app = express();
 app.disable("x-powered-by");
+app.use(securityHeaders);
 app.use("/api", observeRequest);
 app.set("trust proxy", config.trustProxyHops);
 app.use("/api/administrators", administratorsRouter);
 app.use("/api/negotiations", negotiationsRouter);
 app.use("/api/stock", stockRouter);
 app.use("/api/profile", profileRouter);
+app.use("/api/v1", partnerApiRouter);
 app.use(express.json({ limit: "2mb" }));
 app.use("/api/auth", authRouter);
 app.use("/api/users", usersRouter);
@@ -47,9 +55,12 @@ app.use("/api/pre-analyses", preAnalysesRouter);
 app.use("/api/settings", settingsRouter);
 app.use("/api/notifications", notificationsRouter);
 app.use("/api/audit", auditRouter);
+app.use("/api/integrations", integrationsRouter);
+app.use("/api/crm", crmRouter);
+app.use("/api/communications", communicationsRouter);
 
 const checkReady = readinessProbe(async () => {
-  await getDatabase()!.execute(sql`select (select count(*) from auth_rate_limits where false), (select count(*) from email_jobs where false), (select count(*) from notifications where false)`);
+  await getDatabase()!.execute(sql`select (select count(*) from auth_rate_limits where false), (select count(*) from email_jobs where false), (select count(*) from notifications where false), (select desired_credit from stock_alert_preferences where false), (select count(*) from communications where false), (select count(*) from crm_activities where false), (select count(*) from partner_api_keys where false)`);
 });
 app.get("/api/ready", async (_req, res) => {
   try { await checkReady(); res.json({ status: "ready", environment: config.appEnv }); }
@@ -80,7 +91,11 @@ app.use("/api", (error: unknown, _req: express.Request, res: express.Response, _
   if (status === 413 || status === 400) { res.status(status).json({ error: status === 413 ? "Solicitacao acima do limite permitido" : "Solicitacao invalida" }); return; }
   if (error instanceof PasswordChangeRequiredError) { res.status(403).json({ error: error.message, code: error.code }); return; }
   if (error instanceof FileValidationError) { res.status(400).json({ error: error.message }); return; }
-  console.error(JSON.stringify({ event: "api_error", requestId: res.getHeader("X-Request-Id"), type: error instanceof Error ? error.name : "UnknownError" }));
+  const details = error instanceof Error ? {
+    type: error.name, message: error.message, stack: error.stack,
+    cause: error.cause instanceof Error ? { type: error.cause.name, message: error.cause.message, stack: error.cause.stack } : error.cause,
+  } : { type: "UnknownError", value: String(error) };
+  console.error(JSON.stringify({ event: "api_error", requestId: res.getHeader("X-Request-Id"), method: _req.method, path: _req.originalUrl, ...details }));
   res.status(500).json({ error: "Erro interno do servidor" });
 });
 
@@ -98,7 +113,9 @@ app.listen(config.port, config.isProduction ? "0.0.0.0" : "127.0.0.1", () => {
   console.log(`SA Capital disponível em http://localhost:${config.port}`);
 });
 
-const maintenance = () => Promise.all([cleanupExpiredQuotes(), cleanupExpiredDocuments(), cleanupExpiredNotifications(), processStorageCleanup()]).catch(error => console.error("[Manutenção] Falha na limpeza automática", error));
+const maintenance = () => Promise.all([cleanupExpiredQuotes(), cleanupExpiredDocuments(), cleanupExpiredNotifications(), cleanupExpiredStockReservations(), processStorageCleanup()]).catch(error => console.error("[Manutenção] Falha na limpeza automática", error));
+void cleanupExpiredStockReservations().catch(error => console.error("[Estoque] Falha ao limpar reservas expiradas", error));
+setInterval(() => void cleanupExpiredStockReservations().catch(error => console.error("[Estoque] Falha ao limpar reservas expiradas", error)), 60_000).unref();
 if (config.scheduledJobsEnabled) {
   void backfillNegotiations().then(maintenance).catch(error => console.error("[Negociações] Falha ao importar reservas anteriores", error));
   setInterval(() => void processEmailJobs().catch(() => console.error("[Email] Falha no processamento da fila")), 60_000).unref();

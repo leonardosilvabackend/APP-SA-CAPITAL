@@ -1,0 +1,3 @@
+export default function CottusLogo({ dark = false, compact = false }: { dark?: boolean; compact?: boolean }) {
+  return <svg className={`cottus-logo ${compact ? "is-compact" : ""}`} viewBox={compact ? "0 0 48 48" : "0 0 190 48"} role="img" aria-label="Cottus+">{compact ? <><rect width="48" height="48" rx="14" fill={dark ? "#0b1f3a" : "#ffffff"}/><path d="M24 12v24M12 24h24" stroke="#57e2bd" strokeWidth="6" strokeLinecap="round"/></> : <><text x="1" y="35" fill={dark ? "#0b1f3a" : "#ffffff"} fontFamily="Inter,Segoe UI,sans-serif" fontSize="36" fontWeight="650" letterSpacing="-1.5">Cottus</text><text x="145" y="35" fill="#57e2bd" fontFamily="Inter,Segoe UI,sans-serif" fontSize="38" fontWeight="700">+</text></>}</svg>;
+}

@@ -22,6 +22,9 @@ describe("FB normalization", () => {
     expect(normalized({ valor_credito: "50.00", entrada_sem_comissao: 0 })).toMatchObject({ credit: 49.95, entry: 1 });
     expect(normalized({ valor_credito: "150.00", entrada_sem_comissao: 0 })).toMatchObject({ credit: 149.85, entry: 3 });
   });
+  it("accepts Brazilian money formatting and an empty optional fund", () => {
+    expect(normalized({ valor_credito: "R$ 34.805,00", entrada_sem_comissao: "15.400,00", fundo: null })).toMatchObject({ originalCredit: 34805, originalEntry: 15400, fund: 0 });
+  });
   it("deducts 0.1 percent from credit and uses two percent for the FB entry", () => {
     expect(normalized({ valor_credito: "100000.00", entrada_sem_comissao: "10000.00", valor_parcela: "1000.00", parcelas: 48 })).toMatchObject({ credit: 99900, entry: 11998, installmentValue: 1001.7, outstandingBalance: 48081.6 });
   });
@@ -30,11 +33,18 @@ describe("FB normalization", () => {
     expect(normalized({ reserva: "Disponível" }).status).toBe("available");
     expect(() => normalized({ reserva: "???" })).toThrow("Status desconhecido");
   });
-  it.each([{ valor_credito: null }, { valor_credito: "" }, { valor_credito: "0" }, { entrada_sem_comissao: -1 }, { parcelas: 1.5 }, { parcelas: 0 }, { id: null }, { categoria: " " }, { administradora: "" }, { valor_parcela: "NaN" }, { valor_parcela: "999999999999.99", parcelas: 100 }])("rejects essential invalid values: %j", changes => {
+  it.each([{ valor_credito: null }, { valor_credito: "" }, { valor_credito: "0" }, { entrada_sem_comissao: -1 }, { parcelas: 1.5 }, { id: null }, { categoria: " " }, { administradora: "" }, { valor_parcela: "NaN" }, { valor_parcela: "999999999999.99", parcelas: 100 }])("rejects essential invalid values: %j", changes => {
     expect(() => normalized(changes)).toThrow();
+  });
+  it("ignores an upstream quota with no remaining installments", () => {
+    expect(normalizeFbStockResponse([{ ...raw, parcelas: 0 }, { ...raw, parcelas: "0" }, { ...raw, id: 7289 }])).toMatchObject([{ externalId: "7289" }]);
+    expect(() => normalizeFbStockResponse([{ ...raw, parcelas: 0 }])).toThrow("não retornou cotas comerciais ativas");
   });
   it("rejects duplicate IDs and empty or malformed lists", () => {
     for (const data of [[], {}, null, [raw, raw]]) expect(() => normalizeFbStockResponse(data)).toThrow();
+  });
+  it("identifies the invalid upstream field and position", () => {
+    expect(() => normalizeFbStockResponse([{ ...raw, valor_credito: "inválido" }])).toThrow("posição 1 da API FB: campo valor_credito");
   });
   it.each(["http", "json", "network", "empty"])("cancels %s failures", async kind => {
     if (kind === "http") remote.mockResolvedValue({ ok: false, status: 503 });
@@ -43,11 +53,11 @@ describe("FB normalization", () => {
     if (kind === "empty") remote.mockResolvedValue({ ok: true, json: async () => [] });
     await expect(fetchFbStock()).rejects.toThrow("cancelada");
   });
-  it("aborts the request at 60 seconds", async () => {
+  it("aborts the request before the HTTP proxy timeout", async () => {
     vi.useFakeTimers();
     remote.mockImplementation((_url, options) => new Promise((_resolve, reject) => options.signal.addEventListener("abort", () => reject(new Error("aborted")))));
-    const assertion = expect(fetchFbStock()).rejects.toThrow("60 segundos");
-    await vi.advanceTimersByTimeAsync(60000);
+    const assertion = expect(fetchFbStock()).rejects.toThrow("25 segundos");
+    await vi.advanceTimersByTimeAsync(25000);
     await assertion;
   });
 });
@@ -58,6 +68,9 @@ describe("FB planning", () => {
     expect(plan.creates.map(item => item.code)).toEqual(["100429", "100430"]);
     expect(buildFbSyncPlan([normalized()], [local(null, "000123")]).creates[0].code).toBe("000124");
     expect(buildFbSyncPlan([normalized()], []).creates[0].code).toBe("100000");
+  });
+  it("never reuses a retired numeric code", () => {
+    expect(buildFbSyncPlan([normalized()], [], ["100428"]).creates[0].code).toBe("100429");
   });
   it("preserves an existing code and reactivates returning stock", () => {
     const plan = buildFbSyncPlan([normalized()], [local("7288", "SA95", "reserved")]);

@@ -99,6 +99,41 @@
       "when": 1789570557745,
       "tag": "0013_bored_blink",
       "breakpoints": true
-    }
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1790697600000,
+      "tag": "0014_test_partner_features",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1790784000000,
+      "tag": "0015_alert_balance_relation",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1790870400000,
+      "tag": "0016_crm_kanban",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1792764000000,
+      "tag": "0017_expire_stock_reservations",
+      "breakpoints": true
+    },
+    {"idx":18,"version":"7","when":1792800000000,"tag":"0018_smart_search_presence","breakpoints":true},
+    {"idx":19,"version":"7","when":1793156400000,"tag":"0019_stock_flags_fb_mode","breakpoints":true},
+    {"idx":20,"version":"7","when":1793228400000,"tag":"0020_crm_pipelines_complete","breakpoints":true},
+    {"idx":21,"version":"7","when":1793232000000,"tag":"0021_crm_history_stage_ids","breakpoints":true},
+    {"idx":22,"version":"7","when":1793318400000,"tag":"0022_stock_alert_max_installment","breakpoints":true},
+    {"idx":23,"version":"7","when":1793404800000,"tag":"0023_communications","breakpoints":true},
+    {"idx":24,"version":"7","when":1793491200000,"tag":"0024_stock_alert_desired_credit","breakpoints":true}
   ]
 }

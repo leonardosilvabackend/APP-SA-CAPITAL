@@ -1,11 +1,12 @@
 import { guardAuthRate } from "./rate-limit";
-import { and, eq, gt, isNull, sql } from "drizzle-orm";
+import { and, eq, gt, isNull, or, sql } from "drizzle-orm";
 import { createHash, randomBytes } from "node:crypto";
 import { Router, type NextFunction, type Request, type RequestHandler, type Response } from "express";
 import { changePasswordInputSchema, loginInputSchema, requestPasswordResetInputSchema, resetPasswordInputSchema, type AuthenticatedUser } from "../../shared/contracts";
 import { config } from "../config";
 import { getDatabase } from "../db/client";
-import { passwordResetTokens, users } from "../db/schema";
+import { authSessions, notifications, passwordResetTokens, users } from "../db/schema";
+import { notificationExpiry } from "../notifications/routes";
 import { sendPasswordResetEmail } from "../email";
 import { hashPassword, verifyPassword } from "./password";
 import { getCurrentUser } from "./current-user";
@@ -38,7 +39,9 @@ authRouter.post("/login", asyncRoute(async (req, res) => {
   const [user] = await db.select().from(users).where(eq(users.email, parsed.data.email)).limit(1);
   if (!user || !(await verifyPassword(parsed.data.password, user.passwordHash))) return res.status(401).json({ error: "E-mail ou senha inválidos" });
   if (user.status !== "active") return res.status(403).json({ error: "Usuário inativo. Fale com um administrador" });
-  const token = await createSessionToken(user.id, user.sessionVersion);
+  const sessionId=crypto.randomUUID();
+  const token = await createSessionToken(user.id, user.sessionVersion,sessionId);
+  await db.transaction(async tx=>{await tx.insert(authSessions).values({id:sessionId,userId:user.id,expiresAt:new Date(Date.now()+60*60_000)});const recipients=await tx.select({id:users.id}).from(users).where(and(eq(users.status,"active"),or(eq(users.role,"admin"),user.managerId?eq(users.id,user.managerId):sql`false`)));const targets=recipients.filter(r=>r.id!==user.id);if(targets.length)await tx.insert(notifications).values(targets.map(r=>({recipientId:r.id,title:"Usuário online",message:`${user.name} entrou na plataforma em ${new Date().toLocaleString("pt-BR")}.`,link:"/usuarios",expiresAt:notificationExpiry()})));});
   setSessionCookie(res, token);
   return res.json({ user: publicUser(user) });
 }));

@@ -3,17 +3,18 @@ import { SignJWT, jwtVerify } from "jose";
 import { config } from "../config";
 
 export const SESSION_COOKIE = "sa_capital_session";
-const SESSION_DURATION_SECONDS = 60 * 60 * 24 * 7;
+export const SESSION_DURATION_SECONDS = 60 * 60;
 
 function secretKey() {
   if (config.jwtSecret.length < 32) throw new Error("JWT_SECRET deve possuir ao menos 32 caracteres");
   return new TextEncoder().encode(config.jwtSecret);
 }
 
-export async function createSessionToken(userId: string, sessionVersion: number) {
+export async function createSessionToken(userId: string, sessionVersion: number, sessionId = crypto.randomUUID()) {
   return new SignJWT({ role: "user", sessionVersion })
     .setProtectedHeader({ alg: "HS256", typ: "JWT" })
     .setSubject(userId)
+    .setJti(sessionId)
     .setIssuedAt()
     .setExpirationTime(`${SESSION_DURATION_SECONDS}s`)
     .sign(secretKey());
@@ -22,8 +23,8 @@ export async function createSessionToken(userId: string, sessionVersion: number)
 export async function readSessionToken(token: string) {
   try {
     const { payload } = await jwtVerify(token, secretKey(), { algorithms: ["HS256"] });
-    if (!payload.sub || typeof payload.sessionVersion !== "number") return null;
-    return { userId: payload.sub, sessionVersion: payload.sessionVersion };
+    if (!payload.sub || !payload.jti || typeof payload.sessionVersion !== "number") return null;
+    return { userId: payload.sub, sessionId: payload.jti, sessionVersion: payload.sessionVersion };
   } catch {
     return null;
   }

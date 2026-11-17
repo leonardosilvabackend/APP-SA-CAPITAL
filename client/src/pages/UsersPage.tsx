@@ -11,6 +11,7 @@ type UserRecord = AuthenticatedUser & {
   managerId: string | null;
   createdAt: string;
   updatedAt: string;
+  online: boolean; lastActivityAt: string | null;
 };
 const roleLabels: Record<string, string> = { user: "Usuário", advisor: "Assessor", administrative: "Administrativo", admin: "Administrador" };
 
@@ -135,11 +136,12 @@ export default function UsersPage({ currentUser }: { currentUser: AuthenticatedU
       {usersQuery.isLoading && <div className="table-message">Carregando usuários…</div>}
       {usersQuery.error && <div className="auth-error">{usersQuery.error.message}</div>}
       {!usersQuery.isLoading && !usersQuery.error && <table className="users-table">
-        <thead><tr><th>Usuário</th><th>Perfil</th><th>Situação</th><th>Cadastrado em</th>{currentUser.role === "admin" && <th>Ações</th>}</tr></thead>
+        <thead><tr><th>Usuário</th><th>Presença</th><th>Perfil</th><th>Situação</th><th>Cadastrado em</th>{currentUser.role === "admin" && <th>Ações</th>}</tr></thead>
         <tbody>{records.map(user => {
           const isSelf = user.id === currentUser.id;
           return <tr key={user.id} {...selectionSurface(() => setSelectedId(user.id))} aria-label={`Consultar usuário ${user.name}`}>
             <td><div className="user-cell"><span className="table-avatar">{user.name.split(/\s+/).slice(0, 2).map(part => part[0]).join("").toUpperCase()}</span><span><strong>{user.name}{isSelf ? " (você)" : ""}</strong><small>{user.email}{user.phone ? ` • ${user.phone}` : ""}</small></span></div></td>
+            <td><span className={`presence-flag ${user.online?"online":"offline"}`}><i/>{user.online?"Online":"Offline"}</span>{user.lastActivityAt&&<small className="last-activity">{new Date(user.lastActivityAt).toLocaleString("pt-BR")}</small>}</td>
             <td><select aria-label={`Perfil de ${user.name}`} disabled={currentUser.role !== "admin" || isSelf || busy} value={user.role} onChange={event => changeRole(user, event.target.value)}><option value="user">Usuário</option><option value="advisor">Assessor</option><option value="administrative">Administrativo</option><option value="admin">Administrador</option></select></td>
             <td><button className={`status-button ${user.status}`} disabled={currentUser.role !== "admin" || isSelf || updateUser.isPending} onClick={() => updateUser.mutate({ id: user.id, changes: { status: user.status === "active" ? "inactive" : "active" } })}>{user.status === "active" ? <UserCheck size={15} /> : <UserX size={15} />}{user.status === "active" ? "Ativo" : "Inativo"}</button></td>
             <td>{new Intl.DateTimeFormat("pt-BR").format(new Date(user.createdAt))}</td>

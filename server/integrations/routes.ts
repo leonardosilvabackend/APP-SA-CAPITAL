@@ -1,0 +1,16 @@
+import { createHash, randomBytes } from "node:crypto";
+import { and, desc, eq, isNull, sql } from "drizzle-orm";
+import { config } from "../config";
+import { Router, type NextFunction, type Request, type RequestHandler, type Response } from "express";
+import { z } from "zod";
+import { getCurrentUser } from "../auth/current-user";
+import { getDatabase } from "../db/client";
+import { partnerApiKeys } from "../db/schema";
+export const integrationsRouter = Router();
+integrationsRouter.use((_req, res, next) => { res.setHeader("Cache-Control", "no-store"); next(); });
+const route = (fn: (req: Request, res: Response, next: NextFunction) => Promise<unknown>): RequestHandler => (req, res, next) => { void fn(req, res, next).catch(next); };
+const hashToken = (token: string) => createHash("sha256").update(token).digest("hex");
+const current = async (req: Request, res: Response) => { const user = await getCurrentUser(req); if (!user) res.status(401).json({ error: "Faça login" }); return user; };
+integrationsRouter.get("/stock-api", route(async (req, res) => { const user = await current(req, res); if (!user) return; const [item] = await getDatabase()!.select({ id: partnerApiKeys.id, prefix: partnerApiKeys.prefix, commissionRate: partnerApiKeys.commissionRate, lastUsedAt: partnerApiKeys.lastUsedAt, createdAt: partnerApiKeys.createdAt }).from(partnerApiKeys).where(and(eq(partnerApiKeys.userId, user.id), isNull(partnerApiKeys.revokedAt))).orderBy(desc(partnerApiKeys.createdAt)).limit(1); return res.json({ item: item ?? null }); }));
+integrationsRouter.post("/stock-api", route(async (req, res) => { const user = await current(req, res); if (!user) return; const parsed = z.object({ commissionRate: z.number().int().min(0).max(8) }).safeParse(req.body); if (!parsed.success) return res.status(400).json({ error: "A comissão deve estar entre 1% e 8%, ou 0% sem ajuste" }); const token = `sa_${config.isProduction ? "live" : "test"}_${randomBytes(32).toString("base64url")}`; const db = getDatabase()!; await db.transaction(async tx => { await tx.execute(sql`select id from users where id = ${user.id} for update`); await tx.update(partnerApiKeys).set({ revokedAt: new Date() }).where(and(eq(partnerApiKeys.userId, user.id), isNull(partnerApiKeys.revokedAt))); await tx.insert(partnerApiKeys).values({ userId: user.id, tokenHash: hashToken(token), prefix: token.slice(0, 16), commissionRate: parsed.data.commissionRate }); }); return res.status(201).json({ token }); }));
+integrationsRouter.delete("/stock-api", route(async (req, res) => { const user = await current(req, res); if (!user) return; await getDatabase()!.update(partnerApiKeys).set({ revokedAt: new Date() }).where(and(eq(partnerApiKeys.userId, user.id), isNull(partnerApiKeys.revokedAt))); return res.status(204).end(); }));

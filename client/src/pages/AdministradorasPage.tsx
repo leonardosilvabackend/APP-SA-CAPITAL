@@ -2,23 +2,63 @@ import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Building2, Copy, ExternalLink, FileText, Pencil, Plus, Search, X } from "lucide-react";
 import type { Administrator } from "@shared/administrators";
+import { administratorText } from "@shared/administrator-text";
+import { administratorLogoPath } from "../components/AdministratorLogo";
 import { dismissBackdrop } from "../lib/dismissBackdrop";
 import { selectionSurface } from "../lib/selectionSurface";
-import AdministratorFormModal from "./administrators/AdministratorFormModal";
-import { administratorText } from "@shared/administrator-text";
 import { copyText } from "../lib/share-text";
+import AdministratorFormModal from "./administrators/AdministratorFormModal";
 
-async function request() { const response = await fetch("/api/administrators", { credentials: "same-origin" }); const data = await response.json().catch(() => ({})); if (!response.ok) throw new Error(data.error ?? "Não foi possível concluir a operação"); return data; }
+async function request() {
+  const response = await fetch("/api/administrators", { credentials: "same-origin" });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.error ?? "Não foi possível concluir a operação");
+  return data;
+}
+
+function AdminLogo({ item }: { item: Administrator }) {
+  const logo = administratorLogoPath(item.name) ?? item.logo;
+  return <div className="administrator-logo">
+    {logo ? <img src={logo} alt={item.name} loading="lazy" decoding="async" /> : <Building2 size={25} />}
+  </div>;
+}
 
 export function AdministradorasPage({ isAdmin }: { isAdmin: boolean }) {
-  const [search, setSearch] = useState(""); const [editing, setEditing] = useState<Administrator | null | undefined>(); const [selected, setSelected] = useState<Administrator | null>(null); const queryClient = useQueryClient();
+  const [search, setSearch] = useState("");
+  const [editing, setEditing] = useState<Administrator | null | undefined>();
+  const [selected, setSelected] = useState<Administrator | null>(null);
+  const queryClient = useQueryClient();
   const list = useQuery<{ items: Administrator[] }>({ queryKey: ["administrators"], queryFn: request });
-  const filtered = useMemo(() => { const value = search.trim().toLowerCase(); return value ? (list.data?.items ?? []).filter(item => item.name.toLowerCase().includes(value)) : (list.data?.items ?? []); }, [list.data?.items, search]);
+  const filtered = useMemo(() => {
+    const value = search.trim().toLowerCase();
+    return value ? (list.data?.items ?? []).filter(item => item.name.toLowerCase().includes(value)) : (list.data?.items ?? []);
+  }, [list.data?.items, search]);
   const edit = (item: Administrator) => { setSelected(null); setEditing(item); };
-  const saved = (item: Administrator) => { queryClient.setQueryData<{ items: Administrator[] }>(["administrators"], current => ({ items: [...(current?.items ?? []).filter(value => value.id !== item.id), item].sort((a, b) => a.name.localeCompare(b.name)) })); void queryClient.invalidateQueries({ queryKey: ["administrators"] }); setEditing(undefined); };
-  return <div className="administrators-page"><div className="page-heading-row"><div><span className="eyebrow">CONFIGURAÇÕES COMERCIAIS</span><h1>Administradoras</h1><p>Consulte informações, características e documentos das administradoras disponíveis na plataforma.</p></div>{isAdmin && <button className="primary-button" onClick={() => setEditing(null)}><Plus size={17} />Adicionar administradora</button>}</div>
-    <div className="administrator-toolbar panel"><div className="administrator-search"><Search size={17} /><input placeholder="Buscar administradora..." value={search} onChange={event => setSearch(event.target.value)} /></div><span>{filtered.length} administradora{filtered.length !== 1 ? "s" : ""}</span></div>
-    {list.isLoading ? <p role="status">Carregando administradoras…</p> : list.isError ? <div className="empty-state" role="alert"><p>{list.error.message}</p><button className="secondary-button" onClick={() => void list.refetch()}>Tentar novamente</button></div> : filtered.length === 0 ? <div className="empty-state"><span><Building2 size={27} /></span><h2>Nenhuma administradora encontrada</h2><p>{search.trim() ? "Nenhuma administradora corresponde a esta busca." : "Nenhuma administradora cadastrada ainda."}</p></div> : <div className="administrators-grid">{filtered.map(item => <article key={item.id} className="administrator-card" {...selectionSurface(() => setSelected(item))} aria-label={`Consultar documentos de ${item.name}`}><div className="administrator-card-header"><div className="administrator-logo">{item.logo ? <img src={item.logo} alt={item.name} /> : <Building2 size={25} />}</div><div className="administrator-card-name"><span>ADMINISTRADORA</span><h2>{item.name}</h2></div>{isAdmin && <button type="button" className="secondary-button administrator-edit-button" onClick={() => edit(item)} aria-label={`Editar ${item.name}`}><Pencil size={16} />Editar</button>}</div><p className="administrator-description">{item.characteristics}</p><div className="administrator-card-footer"><button type="button" onClick={event => { event.stopPropagation(); void copyText(administratorText(item)); }}><Copy size={15} />Copiar informações</button>{item.website && <a href={item.website} target="_blank" rel="noreferrer"><ExternalLink size={15} />Site oficial</a>}<button type="button" onClick={() => setSelected(item)}><FileText size={15} />{item.documents.length > 0 ? `${item.documents.length} documento(s)` : "Documentos"}</button></div></article>)}</div>}
+  const saved = (item: Administrator) => {
+    queryClient.setQueryData<{ items: Administrator[] }>(["administrators"], current => ({
+      items: [...(current?.items ?? []).filter(value => value.id !== item.id), item].sort((a, b) => a.name.localeCompare(b.name)),
+    }));
+    void queryClient.invalidateQueries({ queryKey: ["administrators"] });
+    setEditing(undefined);
+  };
+
+  return <div className="administrators-page">
+    <div className="page-heading-row">
+      <div><span className="eyebrow">CONFIGURAÇÕES COMERCIAIS</span><h1>Administradoras</h1><p>Consulte informações, características e documentos das administradoras disponíveis na plataforma.</p></div>
+      {isAdmin && <button className="primary-button" onClick={() => setEditing(null)}><Plus size={17} />Adicionar administradora</button>}
+    </div>
+    <div className="administrator-toolbar panel">
+      <div className="administrator-search"><Search size={17} /><input placeholder="Buscar administradora..." value={search} onChange={event => setSearch(event.target.value)} /></div>
+      <span>{filtered.length} administradora{filtered.length !== 1 ? "s" : ""}</span>
+    </div>
+    {list.isLoading ? <p role="status">Carregando administradoras…</p>
+      : list.isError ? <div className="empty-state" role="alert"><p>{list.error.message}</p><button className="secondary-button" onClick={() => void list.refetch()}>Tentar novamente</button></div>
+      : filtered.length === 0 ? <div className="empty-state"><span><Building2 size={27} /></span><h2>Nenhuma administradora encontrada</h2><p>{search.trim() ? "Nenhuma administradora corresponde a esta busca." : "Nenhuma administradora cadastrada ainda."}</p></div>
+      : <div className="administrators-grid">{filtered.map(item => <article key={item.id} className="administrator-card" {...selectionSurface(() => setSelected(item))} aria-label={`Consultar documentos de ${item.name}`}>
+        <div className="administrator-card-header"><AdminLogo item={item} /><div className="administrator-card-name"><span>ADMINISTRADORA</span><h2>{item.name}</h2></div>{isAdmin && <button type="button" className="secondary-button administrator-edit-button" onClick={() => edit(item)} aria-label={`Editar ${item.name}`}><Pencil size={16} />Editar</button>}</div>
+        <p className="administrator-description">{item.characteristics}</p>
+        <div className="administrator-card-footer"><button type="button" onClick={event => { event.stopPropagation(); void copyText(administratorText(item)); }}><Copy size={15} />Copiar informações</button>{item.website && <a href={item.website} target="_blank" rel="noreferrer"><ExternalLink size={15} />Site oficial</a>}<button type="button" onClick={() => setSelected(item)}><FileText size={15} />{item.documents.length > 0 ? `${item.documents.length} documento(s)` : "Documentos"}</button></div>
+      </article>)}</div>}
     {selected && <div className="modal-backdrop" {...dismissBackdrop(() => setSelected(null))}><div className="administrator-modal" role="dialog" aria-modal="true" aria-label="Documentos da administradora"><div className="modal-heading"><h2>Documentos — {selected.name}</h2><button className="icon-button" aria-label="Fechar documentos" onClick={() => setSelected(null)}><X size={18} /></button></div><p>{selected.characteristics}</p><button type="button" className="secondary-button" onClick={() => void copyText(administratorText(selected))}><Copy size={15} /> Copiar informações</button>{selected.documents.length ? <ul>{selected.documents.map(doc => <li key={doc.id}><a href={doc.url} target="_blank" rel="noreferrer">{doc.name}</a></li>)}</ul> : <p>Nenhum documento cadastrado.</p>}{isAdmin && <div className="form-actions"><button type="button" className="primary-button" onClick={() => edit(selected)}><Pencil size={16} />Editar administradora</button></div>}</div></div>}
     {editing !== undefined && isAdmin && <AdministratorFormModal initial={editing} onClose={() => setEditing(undefined)} onSaved={saved} />}
   </div>;

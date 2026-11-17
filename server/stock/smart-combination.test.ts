@@ -18,6 +18,13 @@ it("finds two, three and many quotas without reusing any quota", async () => {
   }
   expect((await findSmartCombination([quota("1", 30), quota("2", 30), quota("3", 40)], input)).items).toHaveLength(3);
 });
+it("applies monetary limits to the combined totals", async () => {
+  const stock = [quota("a", 40, 20, 8, 35), quota("b", 60, 25, 9, 50), quota("too-expensive", 100, 60, 20, 90)];
+  const result = await findSmartCombination(stock, input, { maxEntry: 50, maxInstallment: 18, maxBalance: 90 });
+  expect(result.items.map(item => item.id).sort()).toEqual(["a", "b"]);
+  expect(result.summary).toMatchObject({ creditTotal: 100, entryTotal: 45, installmentTotal: 17, balanceTotal: 85 });
+  expect((await findSmartCombination(stock, input, { maxInstallment: 16 })).items).toHaveLength(0);
+});
 it("compares weighted totals, not simple averages or absolute amounts", async () => {
   const result = await findSmartCombination([quota("single", 98, 35), quota("small", 20, 0), quota("large", 80, 36)], input);
   // A simple average would incorrectly score the pair at 22.5%; its actual ratio is 36%.
