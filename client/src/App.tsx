@@ -40,7 +40,6 @@ import { downloadPublicStock, downloadSaStock, type StockFilters } from "./pages
 import StockAlertModal from "./pages/stock/StockAlertModal";
 import AdministratorCreditModal from "./components/AdministratorCreditModal";
 import CrmPage from "./pages/CrmPage";
-import LandingPage from "./pages/LandingPage";
 import EssentialStorageGate, { essentialStorageKey } from "./components/EssentialStorageGate";
 import CommunicationsModal from "./components/CommunicationsModal";
 import { toast } from "sonner";
@@ -277,7 +276,6 @@ function App() {
 
   if (resetToken) return <ResetPasswordPage token={resetToken} />;
   if (me.isLoading) return <div className="auth-loading">Validando sessão…</div>;
-  if (!me.data && window.location.pathname === "/") return <LandingPage />;
   if (!me.data) return <AuthPage onAuthenticated={async user => { sessionStorage.removeItem("sa-capital-selected-quotas"); await updateSessionCache(queryClient, user); }} />;
   if (me.data.mustChangePassword) return <ChangePasswordPage user={me.data} mandatory onChanged={user => queryClient.setQueryData(["current-user"], user)} />;
   if (!essentialStorageAccepted) return <EssentialStorageGate onAccept={() => { localStorage.setItem(essentialStorageKey, "accepted"); setEssentialStorageAccepted(true); }} onLogout={logout}/>;
